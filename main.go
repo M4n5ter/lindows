@@ -3,9 +3,9 @@
 package main
 
 import (
-	"fmt"
 	"syscall"
 
+	"github.com/m4n5ter/lindows/pkg/yalog"
 	"github.com/m4n5ter/lindows/winapi"
 )
 
@@ -13,30 +13,30 @@ func main() {
 	// 注意：请使用您想要查找窗口的确切名称和/或类名
 	hwnd, err := winapi.FindWindow("", "QQ")
 	if err != nil {
-		fmt.Println(err)
+		yalog.Error("查找窗口失败", "err", err)
 		return
 	}
 	if hwnd == 0 {
-		fmt.Println("QQ 窗口未找到")
+		yalog.Error("QQ 窗口未找到")
 	} else {
-		fmt.Printf("找到 QQ 窗口，句柄为: %d\n", hwnd)
+		yalog.Info("找到 QQ 窗口", "hwnd", hwnd)
 	}
 
 	className, err := winapi.GetClassName(hwnd)
 	if err != nil {
-		fmt.Println(err)
+		yalog.Error("获取窗口类名失败", "err", err)
 		return
 	}
-	fmt.Printf("QQ 窗口类名: %s\n", className)
+	yalog.Info("QQ 窗口类名", "className", className)
 
 	winapi.EnumWindows(func(hwnd syscall.Handle, lParam uintptr) bool {
 		title, err := winapi.GetWindowText(hwnd)
 		if err != nil {
-			fmt.Println(err)
+			yalog.Error("获取窗口标题失败", "err", err)
 			return true
 		}
 		if title == "计算器" {
-			fmt.Printf("找到计算器窗口，句柄为: %d\n", hwnd)
+			yalog.Info("找到计算器窗口", "hwnd", hwnd)
 			return false
 
 		}
