@@ -37,7 +37,7 @@ just
 [windows]
 add-hook:
     @sh -c "echo '{{pre-commit-win}}' > pre-commit"
-    @Remove-Item {{pre_commit}}; mv pre-commit {{pre_commit}}
+    @If (Test-Path {{pre_commit}}) { Remove-Item {{pre_commit}} }; mv pre-commit {{pre_commit}}
 
 # go build
 [unix]
