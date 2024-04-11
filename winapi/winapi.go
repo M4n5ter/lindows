@@ -22,6 +22,8 @@ var (
 	procCreateCompatibleBitmap = gdi32.MustFindProc("CreateCompatibleBitmap")
 	procDeleteDC               = gdi32.MustFindProc("DeleteDC")
 	procBitBlt                 = gdi32.MustFindProc("BitBlt")
+	procDeleteObject           = gdi32.MustFindProc("deleteObject ")
+	procSelectObject           = gdi32.MustFindProc("SelectObject")
 )
 
 // FindWindow 查找窗口,
@@ -189,6 +191,21 @@ func DeleteDC(hdc syscall.Handle) error {
 	return nil
 }
 
+// DeleteObject  放与对象关联的所有系统资源
+//
+// 当绘图对象仍被选入 DC 时，请勿删除 (笔或画笔) 的绘图对象。删除图案画笔时，不会删除与画笔关联的位图。必须单独删除位图。
+func DeleteObject(hgdiobj syscall.Handle) error {
+	r0, _, e1 := syscall.SyscallN(procDeleteObject.Addr(), uintptr(hgdiobj))
+	if r0 == 0 {
+		if e1 != 0 {
+			return error(e1)
+		} else {
+			return syscall.EINTR
+		}
+	}
+	return nil
+}
+
 // BitBlt 复制位图
 func BitBlt(hdcDest, nXDest, nYDest, nWidth, nHeight int32, hdcSrc syscall.Handle, nXSrc, nYSrc int32, dwRop uint32) error {
 	r0, _, e1 := syscall.SyscallN(procBitBlt.Addr(), uintptr(hdcDest), uintptr(nXDest), uintptr(nYDest), uintptr(nWidth), uintptr(nHeight), uintptr(hdcSrc), uintptr(nXSrc), uintptr(nYSrc), uintptr(dwRop))
@@ -200,4 +217,19 @@ func BitBlt(hdcDest, nXDest, nYDest, nWidth, nHeight int32, hdcSrc syscall.Handl
 		}
 	}
 	return nil
+}
+
+// SelectObject 选择一个对象到指定的设备上下文
+//
+// 如果所选对象不是区域且函数成功，则返回值是所替换对象的句柄。 如果所选对象是区域且函数成功，则返回值是以下值之一。
+// NULLREGION：区域为空。
+// SIMPLEREGION：区域为矩形。
+// COMPLEXREGION：区域为复杂形状。
+// 如果发生错误，并且所选对象不是区域，则返回值为 NULL。 否则，它将HGDI_ERROR。
+func SelectObject(hdc syscall.Handle, hgdiobj syscall.Handle) (syscall.Handle, error) {
+	r0, _, e1 := syscall.SyscallN(procSelectObject.Addr(), uintptr(hdc), uintptr(hgdiobj), 0)
+	if e1 != 0 {
+		return syscall.Handle(r0), error(e1)
+	}
+	return syscall.Handle(r0), nil
 }
