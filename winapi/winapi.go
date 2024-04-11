@@ -73,6 +73,18 @@ func EnumWindows(enumFunc enumWindowsProc, lParam uintptr) bool {
 // enumWindowsProc 枚举窗口回调函数，返回false则停止枚举
 type enumWindowsProc func(hwnd syscall.Handle, lParam uintptr) bool
 
+// PrintWindow 打印窗口
+func PrintWindow(hwnd syscall.Handle, hdc syscall.Handle, nFlags uint32) bool {
+	r1, _, err := syscall.SyscallN(procPrintWindow.Addr(), uintptr(hwnd), uintptr(hdc), uintptr(nFlags))
+	if error(err) == nil {
+		return false
+	}
+	if uint32(r1) != 0 {
+		return true
+	}
+	return false
+}
+
 // GetClassName 获取窗口类名
 func GetClassName(hwnd syscall.Handle) (string, error) {
 	var className [256]uint16
