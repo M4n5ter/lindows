@@ -63,7 +63,7 @@ test:
 # lint - 代码检查
 lint: dep-golangci-lint
     @go mod tidy 
-    @gofumpt -w {{root}}
+    @gofumpt -extra -w {{root}}
     @golangci-lint run
 
 # install dependencies - 安装依赖工具
