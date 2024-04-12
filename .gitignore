@@ -5,6 +5,7 @@
 
 # Folders
 temp
+.idea
 
 # Build files
 lindows.exe
