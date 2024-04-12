@@ -3,7 +3,7 @@
 package main
 
 import (
-	"syscall"
+	"os"
 
 	"github.com/m4n5ter/lindows/pkg/yalog"
 	"github.com/m4n5ter/lindows/winapi"
@@ -14,7 +14,7 @@ func main() {
 	hwnd, err := winapi.FindWindow("", "QQ")
 	if err != nil {
 		yalog.Error("查找窗口失败", "err", err)
-		return
+		os.Exit(1)
 	}
 	if hwnd == 0 {
 		yalog.Error("QQ 窗口未找到")
@@ -25,11 +25,11 @@ func main() {
 	className, err := winapi.GetClassName(hwnd)
 	if err != nil {
 		yalog.Error("获取窗口类名失败", "err", err)
-		return
+		os.Exit(1)
 	}
 	yalog.Info("QQ 窗口类名", "className", className)
 
-	winapi.EnumWindows(func(hwnd syscall.Handle, lParam uintptr) bool {
+	winapi.EnumWindows(func(hwnd winapi.HWND, lParam uintptr) bool {
 		title, err := winapi.GetWindowText(hwnd)
 		if err != nil {
 			yalog.Error("获取窗口标题失败", "err", err)
