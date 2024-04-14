@@ -15,11 +15,12 @@ var (
 	procDeleteObject           = gdi32.MustFindProc("DeleteObject")
 	procSelectObject           = gdi32.MustFindProc("SelectObject")
 	procGetDIBits              = gdi32.MustFindProc("GetDIBits")
+	procGetObject              = gdi32.MustFindProc("GetObjectW")
 )
 
 type BITMAPINFO struct {
 	BmiHeader BITMAPINFOHEADER
-	BmiColors [1]RGBQUAD // This is a placeholder, actual color table size varies
+	BmiColors []RGBQUAD // This is a placeholder, actual color table size varies
 }
 
 type BITMAPINFOHEADER struct {
@@ -41,6 +42,22 @@ type RGBQUAD struct {
 	RgbGreen    byte
 	RgbRed      byte
 	RgbReserved byte
+}
+type BITMAPFILEHEADER struct {
+	BfType      uint32
+	BfSize      uint32
+	BfReserved1 uint32
+	BfReserved2 uint32
+	BfOffBits   uint32
+}
+type Bitmap struct {
+	BmType       int32
+	BmWidth      int32
+	BmHeight     int32
+	BmWidthBytes int32
+	BmPlanes     int16
+	BmBitsPixel  int16
+	BmBits       unsafe.Pointer
 }
 
 // CreateCompatibleDC 创建与指定设备兼容的内存设备上下文
@@ -192,10 +209,19 @@ func DeleteObject(ho HGDIOBJ) error {
 //		[in] HDC     hdc,
 //		[in] HGDIOBJ h
 //	);
-func SelectObject(hdc HDC, h HGDIOBJ) (HGDIOBJ, error) {
+/*func SelectObject(hdc HDC, h HGDIOBJ) (HGDIOBJ, error) {
 	r1, _, err := procSelectObject.Call(uintptr(hdc), uintptr(h), 0)
 	if err.(syscall.Errno) != 0 {
 		return HGDIOBJ(r1), err
+	}
+
+	return HGDIOBJ(r1), nil
+}*/
+// SelectObject 选择对象
+func SelectObject(hdc HDC, h HGDIOBJ) (HGDIOBJ, error) {
+	r1, _, err := procSelectObject.Call(uintptr(hdc), uintptr(h))
+	if r1 == 0 {
+		return HGDIOBJ(0), err
 	}
 
 	return HGDIOBJ(r1), nil
@@ -226,6 +252,7 @@ func GetDIBits(hdc HDC, hbm HBITMAP, start, cLines uint32, lpvBits unsafe.Pointe
 		uintptr(unsafe.Pointer(lpbmi)),
 		uintptr(usage),
 	)
+
 	if r1 == 0 {
 		if err.(syscall.Errno) == 0 {
 			return syscall.EINVAL
@@ -234,4 +261,19 @@ func GetDIBits(hdc HDC, hbm HBITMAP, start, cLines uint32, lpvBits unsafe.Pointe
 		return err
 	}
 	return nil
+}
+
+func GetObjectW(hgdiobj HGDIOBJ, c uint32, pv uintptr) uint32 {
+	r1, _, err := procGetObject.Call(uintptr(hgdiobj), uintptr(c), pv)
+	if r1 == 0 {
+		return 0
+	}
+	if err != nil {
+		return 0
+	}
+	pointer := unsafe.Pointer(pv)
+	if pointer != nil {
+		return uint32(r1)
+	}
+	return c
 }

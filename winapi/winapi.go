@@ -8,6 +8,15 @@ type (
 	HGDIOBJ syscall.Handle
 )
 
+const (
+/*
+GHND           = 0x0042
+SRCCOPY        = 0x00CC0020
+DIB_RGB_COLORS = 0
+BI_RGB         = 0
+*/
+)
+
 type (
 	HBITMAP = HGDIOBJ
 	HBRUSH  = HGDIOBJ
@@ -15,3 +24,89 @@ type (
 	HFONT   = HGDIOBJ
 	HRGN    = HGDIOBJ
 )
+
+type (
+	LPINPUT = uintptr
+)
+
+// 事件
+const (
+	InputMouse    = 0 // 事件是鼠标事件。 使用联合的 mi 结构。
+	InputKeyboard = 1 // 事件是键盘事件。 使用联合的 ki 结构
+	// InputHardware = 2 // 事件是硬件事件。 使用联合的 hi 结构。
+)
+
+type DummyUnionName struct {
+	MI MInput
+	KI KInput
+	HI HInput
+}
+
+type MInput struct {
+	Type uint32
+	MI   MouseInput
+}
+type KInput struct {
+	Type uint32
+	KI   KeyBDInput
+}
+type HInput struct {
+	Type uint32
+	HI   HardWareInput
+}
+
+// 鼠标
+
+const (
+	MouseEventFMove     = 0x0001 // 发生了移动。
+	MouseEventFLeftDown = 0x0002 // 按下了左侧按钮。
+	/*	MOUSEEVENTF_LEFTUP          = 0x0004 // 左按钮已释放。
+		MOUSEEVENTF_RIGHTDOWN       = 0x0008 // 按下了向右按钮。
+		MOUSEEVENTF_RIGHTUP         = 0x0010 // 右侧按钮已松开。
+		MOUSEEVENTF_MIDDLEDOWN      = 0x0020 // 按下中间按钮。
+		MOUSEEVENTF_MIDDLEUP        = 0x0040 // 中间按钮已释放。
+		MOUSEEVENTF_XDOWN           = 0x0080 // 按下了 X 按钮。
+		MOUSEEVENTF_XUP             = 0x0100 // 已释放 X 按钮。
+		MOUSEEVENTF_WHEEL           = 0x0800 // 如果鼠标有滚轮，则滚轮已移动。移动量在 mouseData 中指定。
+		MOUSEEVENTF_HWHEEL          = 0x1000 // 如果鼠标有滚轮，则方向盘是水平移动的。移动量在 mouseData 中指定。
+		MOUSEEVENTF_MOVE_NOCOALESCE = 0x2000 // 不会合并WM_MOUSEMOVE消息。默认行为是合并 WM_MOUSEMOVE 消息。
+		MOUSEEVENTF_VIRTUALDESK     = 0x4000 // 将坐标映射到整个桌面。必须与 MOUSEEVENTF_ABSOLUTE 一起使用。
+		MOUSEEVENTF_ABSOLUTE        = 0x8000 // dx 和 dy 成员包含规范化的绝对坐标。如果未设置标志，dx和dy包含相对数据(自上次报告的位置)更改。无论哪种类型的鼠标或其他指针设备(如果有)连接到系统，都可以设置或不设置此标志。
+	*/
+)
+
+type MouseInput struct {
+	Dx          int32
+	Dy          int32
+	MouseData   uint32
+	DwFlags     uint32
+	Time        uint32
+	DwExtraInfo uintptr
+}
+
+// 键盘
+const (
+	// KEYEVENTF_EXTENDEDKEY = 0x0001
+	KeyEventFKeyUp   = 0x0002
+	KeyEventFUnicode = 0x0004
+	// KEYEVENTF_SCANCODE    = 0x0008
+)
+
+type KeyBDInput struct {
+	WVk         uint16
+	WScan       uint16
+	DwFlags     uint32
+	Time        uint32
+	DwExtraInfo uintptr
+}
+
+// 硬件
+type HardWareInput struct {
+	UMsg    uint32
+	WParamL uint16
+	WParamH uint16
+}
+
+type RECT struct {
+	Left, Top, Right, Bottom int32
+}
