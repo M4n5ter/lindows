@@ -1,0 +1,3 @@
+# 忽略除了src-tauri目录之外的所有文件
+*
+!src-tauri/

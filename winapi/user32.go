@@ -194,12 +194,10 @@ func isErr(err error) bool {
 	if err == nil {
 		return false
 	}
-
 	return err.Error() != "The operation completed successfully."
 }
 
 // SendInput 合成键击、鼠标动作和按钮单击。
-
 func SendInput(cInputs uint32, pInputs unsafe.Pointer, size uint32) uint32 {
 	r1, _, err := procSendInput.Call(
 		uintptr(cInputs),
