@@ -8,14 +8,13 @@ type (
 	HGDIOBJ syscall.Handle
 )
 
-const (
-/*
+/*const (
 GHND           = 0x0042
 SRCCOPY        = 0x00CC0020
 DIB_RGB_COLORS = 0
 BI_RGB         = 0
-*/
 )
+*/
 
 type (
 	HBITMAP = HGDIOBJ
