@@ -7,7 +7,9 @@ use wasm_bindgen::prelude::*;
 pub fn Screen(#[prop(into)] src: String) -> impl IntoView {
     let handle_mousemove = move |event: MouseEvent| {
         let target = event.target().unwrap();
-        let element = target.dyn_into::<web_sys::Element>().unwrap();
+        let element = target
+            .dyn_into::<web_sys::Element>()
+            .expect("Video element");
         let rect = element.get_bounding_client_rect();
         let x = event.client_x() as f64 - rect.left();
         let y = event.client_y() as f64 - rect.top();
@@ -69,8 +71,30 @@ pub fn Screen(#[prop(into)] src: String) -> impl IntoView {
         }
     };
 
+    // Focus the video when clicked
+    let handle_click = move |event: MouseEvent| {
+        event.prevent_default();
+        let target = event.target().unwrap();
+        let element = target
+            .dyn_into::<web_sys::HtmlVideoElement>()
+            .expect("Video should cast to HtmlElement");
+        element.focus().expect("Focus video");
+        console_log("Video focused");
+    };
+
+    let handle_keydown = move |event: web_sys::KeyboardEvent| {
+        let key = event.key();
+        console_log(&format!("Key down: {}", key));
+    };
+
+    let handle_keyup = move |event: web_sys::KeyboardEvent| {
+        let key = event.key();
+        console_log(&format!("Key up: {}", key));
+    };
+
     view! {
         <video
+            tabindex=0
             controls=false
             autoplay=true
             playsinline=true
@@ -79,7 +103,11 @@ pub fn Screen(#[prop(into)] src: String) -> impl IntoView {
             on:mousedown=handle_mousedown
             on:mouseup=handle_mouseup
             on:wheel=handle_wheel
+            on:click=handle_click
+            on:keydown=handle_keydown
+            on:keyup=handle_keyup
         >
+
             "Your browser does not support the video tag."
         </video>
     }
