@@ -45,24 +45,22 @@ func GetWindowRect(hwnd HWND, lpRect *RECT) (bool, error) {
 //	);
 func FindWindow(className, windowName string) (hwnd HWND, err error) {
 	var lpClassName, lpWindowName *uint16
-	lpClassName, err = syscall.UTF16PtrFromString(className)
-	if err != nil {
-		return 0, err
+	if className != "" {
+		lpClassName, err = syscall.UTF16PtrFromString(className)
+		if err != nil {
+			return 0, err
+		}
 	}
-	lpWindowName, err = syscall.UTF16PtrFromString(windowName)
-	if err != nil {
-		return 0, err
+	if windowName != "" {
+		lpWindowName, err = syscall.UTF16PtrFromString(windowName)
+		if err != nil {
+			return 0, err
+		}
 	}
-	if className == "" {
-		lpClassName = nil
-	}
-	if windowName == "" {
-		lpWindowName = nil
-	}
+
 	r1, _, err := procFindWindow.Call(
 		uintptr(unsafe.Pointer(lpClassName)),
 		uintptr(unsafe.Pointer(lpWindowName)))
-
 	hwnd = HWND(r1)
 	if hwnd == 0 {
 		// hwnd == 0 时，表示系统调用失败，以下是为了处理一个特殊情况：
