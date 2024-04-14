@@ -209,15 +209,6 @@ func DeleteObject(ho HGDIOBJ) error {
 //		[in] HDC     hdc,
 //		[in] HGDIOBJ h
 //	);
-/*func SelectObject(hdc HDC, h HGDIOBJ) (HGDIOBJ, error) {
-	r1, _, err := procSelectObject.Call(uintptr(hdc), uintptr(h), 0)
-	if err.(syscall.Errno) != 0 {
-		return HGDIOBJ(r1), err
-	}
-
-	return HGDIOBJ(r1), nil
-}*/
-// SelectObject 选择对象
 func SelectObject(hdc HDC, h HGDIOBJ) (HGDIOBJ, error) {
 	r1, _, err := procSelectObject.Call(uintptr(hdc), uintptr(h))
 	if r1 == 0 {
