@@ -2,7 +2,7 @@
   "rust-analyzer.procMacro.ignored": {
     "leptos_macro": [
       // optional:
-      // "component",
+      "component",
       "server"
     ],
   },
@@ -28,4 +28,7 @@
     "strings": true
   },
   "css.validate": false,
+  "rust-analyzer.linkedProjects": [
+    ".\\Cargo.toml"
+  ],
 }

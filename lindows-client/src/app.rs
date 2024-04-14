@@ -1,8 +1,10 @@
-use leptos::leptos_dom::ev::SubmitEvent;
-use leptos::*;
+use leptos::leptos_dom::logging::console_log;
+use leptos::{*};
+use leptos::ev::MouseEvent;
 use serde::{Deserialize, Serialize};
-use serde_wasm_bindgen::to_value;
 use wasm_bindgen::prelude::*;
+
+use crate::components::sidebar::Sidebar;
 
 #[wasm_bindgen]
 extern "C" {
@@ -17,43 +19,44 @@ struct GreetArgs<'a> {
 
 #[component]
 pub fn App() -> impl IntoView {
-    let (name, set_name) = create_signal(String::new());
-    let (greet_msg, set_greet_msg) = create_signal(String::new());
+    let handle_mousemove = move |event: MouseEvent| {
+        let target = event.target().unwrap();
+        let element = target.dyn_into::<web_sys::Element>().unwrap();
+        let rect = element.get_bounding_client_rect();
+        let x = event.client_x() as f64 - rect.left();
+        let y = event.client_y() as f64 - rect.top();
 
-    let update_name = move |ev| {
-        let v = event_target_value(&ev);
-        set_name.set(v);
-    };
+        let width = rect.width();
+        let height = rect.height();
 
-    let greet = move |ev: SubmitEvent| {
-        ev.prevent_default();
-        spawn_local(async move {
-            let name = name.get_untracked();
-            if name.is_empty() {
-                return;
-            }
+        let x_ratio = x / width;
+        let y_ratio = y / height;
 
-            let args = to_value(&GreetArgs { name: &name }).unwrap();
-            // Learn more about Tauri commands at https://tauri.app/v1/guides/features/command
-            let new_msg = invoke("greet", args).await.as_string().unwrap();
-            set_greet_msg.set(new_msg);
-        });
+        console_log(&format!("Mouse moved to ({}, {})", x_ratio, y_ratio));
     };
 
     view! {
-        <main class="container">
-            <h1>"Lindows 客户端"</h1>
+        <main class="flex fullwindow">
+            <div class="w-24">
+                <Sidebar/>
+            </div>
 
-            <form class="flex flex-col" on:submit=greet>
-                <input id="greet-input" placeholder="Enter a name..." on:input=update_name/>
-                <button class="btn rounded-md bg-base-200" type="submit">
-                    "Greet"
-                </button>
-            </form>
+            <div class="w-1 divider divider-horizontal"></div>
 
-            <p>
-                <b>{move || greet_msg.get()}</b>
-            </p>
+            <div class="flex flex-grow">
+                <div class="flex skeleton rounded-box w-full items-center justify-center">
+                    <video
+                        controls=false
+                        autoplay=true
+                        playsinline=true
+                        src="https://www.w3schools.com/html/mov_bbb.mp4"
+                        on:mousemove=handle_mousemove
+                    >
+                        // <source src="https://www.w3schools.com/html/mov_bbb.mp4" type="video/mp4"/>
+                        "Your browser does not support the video tag."
+                    </video>
+                </div>
+            </div>
         </main>
     }
 }
