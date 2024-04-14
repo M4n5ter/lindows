@@ -1,6 +1,5 @@
 package winapi
 
-import "C"
 import (
 	"syscall"
 	"unsafe"
