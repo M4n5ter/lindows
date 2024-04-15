@@ -19,7 +19,8 @@ var (
 //
 // https://learn.microsoft.com/zh-cn/windows/win32/api/winuser/nf-winuser-openclipboard
 //
-//		BOOL OpenClipboard(
+// BOOL OpenClipboard(
+//
 //	 [in, optional] HWND hWndNewOwner
 //		);
 func OpenClipboard(hWndNewOwner HWND) bool {
@@ -111,24 +112,29 @@ func GetClipboardData(uFormat uint32) (HANDLE, error) {
 func WriteTextToClipboard(content string) {
 	var hMemory HGLOBAL
 	var lpMemory LPVOID // 或者 *uint32，根据系统位数选择
-
+	var err error
 	contentSize := int32(len(content)) + 1
+	// 打开剪切板
 	if !OpenClipboard(HWND(uintptr(0))) {
 		yalog.Info("OpenClipboard", "剪切板打开失败")
 		return
 	}
+	// 清空剪切板
 	if !EmptyClipboard() {
 		yalog.Info("EmptyClipboard", "剪切板清空失败")
 		CloseClipboard()
 		return
 	}
-	var err error
+
+	// 申请内存
 	hMemory, err = GlobalAlloc(GmemMoveable, contentSize)
 	if err != nil {
 		yalog.Info("GlobalAlloc", "获取内存失败")
 		CloseClipboard()
 		return
 	}
+	defer GlobalFree(hMemory)
+	// 锁内存
 	lpMemory, err = GlobalLock(hMemory)
 	if err != nil {
 		yalog.Info("GlobalLock", "内存锁定失败")
