@@ -1,5 +1,6 @@
 mod app;
 pub mod components;
+pub mod tauri;
 
 use app::*;
 use leptos::*;

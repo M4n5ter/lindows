@@ -3,6 +3,8 @@ use leptos::leptos_dom::logging::console_log;
 use leptos::*;
 use wasm_bindgen::prelude::*;
 
+use crate::tauri::{self};
+
 #[component]
 pub fn Screen(#[prop(into)] src: String) -> impl IntoView {
     let handle_mousemove = move |event: MouseEvent| {
@@ -85,6 +87,19 @@ pub fn Screen(#[prop(into)] src: String) -> impl IntoView {
     let handle_keydown = move |event: web_sys::KeyboardEvent| {
         let key = event.key();
         console_log(&format!("Key down: {}", key));
+
+        spawn_local(async move {
+            if key == "c" {
+                let text = tauri::clipboard::read_text().await;
+                console_log(&format!("Clipboard text: {}", text));
+            }
+
+            if key == "v" {
+                let text = "Hello from Leptos!";
+                tauri::clipboard::write_text(text).await;
+                console_log("Text copied to clipboard");
+            }
+        });
     };
 
     let handle_keyup = move |event: web_sys::KeyboardEvent| {

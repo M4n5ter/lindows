@@ -1,25 +1,10 @@
-use leptos::{*};
-use serde::{Deserialize, Serialize};
-use wasm_bindgen::prelude::*;
+use leptos::*;
 
-use crate::components::sidebar::Sidebar;
 use crate::components::screen::Screen;
-
-#[wasm_bindgen]
-extern "C" {
-    #[wasm_bindgen(js_namespace = ["window", "__TAURI__", "core"])]
-    async fn invoke(cmd: &str, args: JsValue) -> JsValue;
-}
-
-#[derive(Serialize, Deserialize)]
-struct GreetArgs<'a> {
-    name: &'a str,
-}
+use crate::components::sidebar::Sidebar;
 
 #[component]
 pub fn App() -> impl IntoView {
-    
-
     view! {
         <main class="flex fullwindow">
             <div class="w-24">
