@@ -61,10 +61,12 @@ test:
     @go test -v {{join(".", "...")}}
 
 # lint - 代码检查
-lint: dependencies
+lint: dep-golangci-lint
     @go mod tidy 
-    @gofumpt -extra -w {{root}}
     @golangci-lint run
+
+format: dep-gofumpt
+    @gofumpt -extra -w {{root}}
 
 # install dependencies - 安装依赖工具
 dependencies: dep-golangci-lint dep-gofumpt
