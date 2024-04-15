@@ -61,7 +61,7 @@ test:
     @go test -v {{join(".", "...")}}
 
 # lint - 代码检查
-lint: dep-golangci-lint
+lint: dependencies
     @go mod tidy 
     @gofumpt -extra -w {{root}}
     @golangci-lint run
