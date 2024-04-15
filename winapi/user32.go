@@ -190,32 +190,30 @@ func GetDC(hwnd HWND) (HDC, error) {
 }
 
 // if是空则返回flase，如果错误结果不等于the operation completed successfully.则返回true
-func isErr(method string, err error) bool {
+func isErr(err error) bool {
 	if err == nil {
 		return false
 	}
-
 	return err.Error() != "The operation completed successfully."
 }
 
 // SendInput 合成键击、鼠标动作和按钮单击。
-
-func SendInput(cInputs uint, pInputs unsafe.Pointer, size uint) uint {
+func SendInput(cInputs uint32, pInputs unsafe.Pointer, size uint32) uint32 {
 	r1, _, err := procSendInput.Call(
-		1,
+		uintptr(cInputs),
 		uintptr(pInputs),
 		uintptr(size),
 	)
-	if isErr("sendInput", err) {
+	if isErr(err) {
 		return 0
 	}
-	return uint(r1)
+	return uint32(r1)
 }
 
 // SetCursorPos 将光标移动到指定的屏幕坐标。 如果新坐标不在由最新 ClipCursor 函数调用设置的屏幕矩形内，则系统会自动调整坐标，使光标停留在矩形内。
 func SetCursorPos(x, y int) bool {
 	r1, _, err := procSetCursorPosProc.Call(uintptr(x), uintptr(y))
-	if isErr("SetCursorPos", err) {
+	if isErr(err) {
 		return false
 	}
 	return r1 != 0
