@@ -7,7 +7,6 @@ resolver = "2"
 [workspace.dependencies]
 serde = { version = "1", features = ["derive"] }
 
-
 [dependencies]
 leptos = { version = "0.6", features = ["csr"] }
 wasm-bindgen = "0.2"

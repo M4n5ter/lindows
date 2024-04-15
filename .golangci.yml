@@ -96,6 +96,9 @@ issues:
     - web_src
   exclude-rules:
     # Exclude some linters from running on tests files.
+    - path: keyevent.go
+      linters:
+        - revive
     - path: _test\.go
       linters:
         - gocyclo
