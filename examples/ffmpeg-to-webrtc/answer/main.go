@@ -8,10 +8,10 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"sync"
 	"time"
 
+	"github.com/m4n5ter/lindows/pkg/ffmpeg"
 	"github.com/m4n5ter/lindows/pkg/yalog"
 	"github.com/pion/webrtc/v4"
 	"github.com/pion/webrtc/v4/pkg/media"
@@ -126,12 +126,15 @@ func main() {
 	}()
 
 	go func() {
-		dataPipe, err := RunCommand("ffmpeg", os.Args[3:]...)
+		stdout, ffmpegErr := ffmpeg.RecordScreen("5", "desktop")
+		if err != nil {
+			yalog.Error(ffmpegErr)
+		}
 		if err != nil {
 			yalog.Error(err)
 		}
 
-		h264, h264Err := h264reader.NewReader(dataPipe)
+		h264, h264Err := h264reader.NewReader(*stdout)
 		if h264Err != nil {
 			yalog.Error(h264Err)
 		}
