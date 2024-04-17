@@ -13,9 +13,9 @@ import (
 
 	"github.com/m4n5ter/lindows/pkg/ffmpeg"
 	"github.com/m4n5ter/lindows/pkg/yalog"
-	"github.com/pion/webrtc/v4"
-	"github.com/pion/webrtc/v4/pkg/media"
-	"github.com/pion/webrtc/v4/pkg/media/h264reader"
+	"github.com/pion/webrtc/v3"
+	"github.com/pion/webrtc/v3/pkg/media"
+	"github.com/pion/webrtc/v3/pkg/media/h264reader"
 )
 
 const (
@@ -126,7 +126,7 @@ func main() {
 	}()
 
 	go func() {
-		stdout, ffmpegErr := ffmpeg.RecordScreen("5", "desktop")
+		stdout, ffmpegErr := ffmpeg.RecordScreen("desktop")
 		if err != nil {
 			yalog.Error(ffmpegErr)
 		}
@@ -139,8 +139,14 @@ func main() {
 			yalog.Error(h264Err)
 		}
 
+		yalog.Info("等建立连接")
+
 		// Wait for connection established
 		<-iceConnectedCtx.Done()
+
+		time.Sleep(10 * time.Second)
+
+		yalog.Info("开始发送视频")
 
 		// Send our video file frame at a time. Pace our sending so we send it at the same speed it should be played back as.
 		// This isn't required since the video is timestamped, but we will such much higher loss if we send all at once.
@@ -154,6 +160,7 @@ func main() {
 			nal, h264Err := h264.NextNAL()
 			if h264Err == io.EOF {
 				yalog.Infof("All video frames parsed and sent")
+				return
 			}
 			if h264Err != nil {
 				yalog.Error(h264Err)
@@ -172,6 +179,7 @@ func main() {
 			if h264Err = videoTrack.WriteSample(media.Sample{Data: nal.Data, Duration: time.Second}); h264Err != nil {
 				yalog.Error(h264Err)
 			}
+			yalog.Infof("Sent frame")
 		}
 	}()
 
