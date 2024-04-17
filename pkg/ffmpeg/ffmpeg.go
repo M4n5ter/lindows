@@ -31,7 +31,7 @@ func TempFFmpeg() (name string, delFFmpeg func(), err error) {
 }
 
 // TODO: 不完整的实现，需要完善
-func RecordScreen(duration, target string) (*io.ReadCloser, error) {
+func RecordScreen(target string) (*io.ReadCloser, error) {
 	ffmpegPath, delFFmpeg, err := TempFFmpeg()
 	if err != nil {
 		return nil, fmt.Errorf("failed to create temp ffmpeg: %v", err)
@@ -39,7 +39,7 @@ func RecordScreen(duration, target string) (*io.ReadCloser, error) {
 	defer delFFmpeg()
 
 	// Create the command to record the screen
-	cmd := exec.Command(ffmpegPath, "-f", "gdigrab", "-framerate", "30", "-t", duration, "-i", target, "-f", "webm", "pipe:1")
+	cmd := exec.Command(ffmpegPath, "-f", "gdigrab", "-framerate", "30", "-i", target, "-f", "h264", "pipe:1")
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get stdout pipe: %v", err)
@@ -52,10 +52,10 @@ func RecordScreen(duration, target string) (*io.ReadCloser, error) {
 	}
 
 	// Wait for the command to finish
-	err = cmd.Wait()
-	if err != nil {
-		return nil, fmt.Errorf("ffmpeg command failed: %v", err)
-	}
+	// err = cmd.Wait()
+	// if err != nil {
+	// 	return nil, fmt.Errorf("ffmpeg command failed: %v", err)
+	// }
 
 	return &stdout, nil
 }
