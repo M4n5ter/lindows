@@ -16,7 +16,7 @@ import (
 	"sync"
 
 	"github.com/m4n5ter/lindows/pkg/yalog"
-	"github.com/pion/webrtc/v3"
+	"github.com/pion/webrtc/v4"
 )
 
 func signalCandidate(addr string, c *webrtc.ICECandidate) error {
