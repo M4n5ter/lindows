@@ -2,6 +2,7 @@ package yalog
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
 )
@@ -12,31 +13,31 @@ type Logger struct {
 }
 
 func (l *Logger) Debug(msg any, args ...any) {
-	r := newRecord(slog.LevelDebug, msg.(string))
+	r := newRecord(slog.LevelDebug, fmt.Sprintf("%v", msg))
 	r.Add(args...)
 	handle(l, r, slog.LevelDebug)
 }
 
 func (l *Logger) Info(msg any, args ...any) {
-	r := newRecord(slog.LevelInfo, msg.(string))
+	r := newRecord(slog.LevelInfo, fmt.Sprintf("%v", msg))
 	r.Add(args...)
 	handle(l, r, slog.LevelInfo)
 }
 
 func (l *Logger) Warn(msg any, args ...any) {
-	r := newRecord(slog.LevelWarn, msg.(string))
+	r := newRecord(slog.LevelWarn, fmt.Sprintf("%v", msg))
 	r.Add(args...)
 	handle(l, r, slog.LevelWarn)
 }
 
 func (l *Logger) Error(msg any, args ...any) {
-	r := newRecord(slog.LevelError, msg.(string))
+	r := newRecord(slog.LevelError, fmt.Sprintf("%v", msg))
 	r.Add(args...)
 	handle(l, r, slog.LevelError)
 }
 
-func (l *Logger) Panic(msg any, args ...any) {
-	r := newRecord(slog.LevelError, msg.(string))
+func (l *Logger) Fatal(msg any, args ...any) {
+	r := newRecord(slog.LevelError, fmt.Sprintf("%v", msg))
 	r.Add(args...)
 	handle(l, r, slog.LevelError)
 	os.Exit(1)
@@ -62,7 +63,7 @@ func (l *Logger) Errorf(format string, args ...any) {
 	handle(l, r, slog.LevelError)
 }
 
-func (l *Logger) Panicf(format string, args ...any) {
+func (l *Logger) Fatalf(format string, args ...any) {
 	r := newRecord(slog.LevelError, format, args...)
 	handle(l, r, slog.LevelError)
 	os.Exit(1)
