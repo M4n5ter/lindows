@@ -211,7 +211,7 @@ func SendInput(cInputs uint32, pInputs unsafe.Pointer, size uint32) uint32 {
 }
 
 // SetCursorPos 将光标移动到指定的屏幕坐标。 如果新坐标不在由最新 ClipCursor 函数调用设置的屏幕矩形内，则系统会自动调整坐标，使光标停留在矩形内。
-func SetCursorPos(x, y int) bool {
+func SetCursorPos(x, y int32) bool {
 	r1, _, err := procSetCursorPosProc.Call(uintptr(x), uintptr(y))
 	if isErr(err) {
 		return false
