@@ -1,0 +1,31 @@
+{
+    "folders": [
+        {
+            "path": "."
+        }
+    ],
+    "settings": {
+        "editor.tabSize": 4,
+        "editor.insertSpaces": true,
+        "editor.detectIndentation": false,
+        "files.encoding": "utf8",
+        "files.eol": "\n",
+        "todo-tree.filtering.excludeGlobs": [
+            "**/node_modules/**"
+        ],
+        "remote.extensionKind": {
+            "ms-azuretools.vscode-docker": "ui"
+        },
+        "remote.containers.defaultExtensions": [
+            "ms-vscode.go",
+            "ms-vscode.cpptools",
+            "ms-vscode-remote.vscode-remote-extensionpack",
+            "ms-vscode-remote.remote-containers",
+            "ms-azuretools.vscode-docker",
+            "editorconfig.editorconfig",
+            "gruntfuggly.todo-tree",
+            "eamodio.gitlens",
+            "swyphcosmo.spellchecker"
+        ]
+    }
+}
