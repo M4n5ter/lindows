@@ -25,7 +25,7 @@ func newStreamManager(codec codec.RTPCodec, audioVideoID string) *StreamManager 
 	}
 }
 
-func (manager *StreamManager) Codec() codec.RTPCodec {
+func (manager StreamManager) Codec() codec.RTPCodec {
 	return manager.codec
 }
 

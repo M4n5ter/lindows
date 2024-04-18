@@ -18,7 +18,7 @@ type Manager struct {
 	config     *config.WebRTC
 }
 
-func New() *Manager {
+func New(cfg *config.WebRTC) *Manager {
 	return &Manager{
 		logger: yalog.Default().With("module", "webrtc"),
 	}
@@ -28,7 +28,8 @@ func (manager *Manager) Start() {
 	var err error
 
 	// Video
-	manager.videoTrack, err = webrtc.NewTrackLocalStaticRTP(manager.videoTrack.Codec(), "video", "stream")
+	videoCodec := manager.capture.Video().Codec()
+	manager.videoTrack, err = webrtc.NewTrackLocalStaticRTP(videoCodec.Capability, "video", "stream")
 	if err != nil {
 		manager.logger.Fatal("Failed to create video track", "error", err)
 	}
@@ -49,7 +50,8 @@ func (manager *Manager) Start() {
 	}()
 
 	// Audio
-	manager.audioTrack, err = webrtc.NewTrackLocalStaticRTP(manager.audioTrack.Codec(), "audio", "stream")
+	audioCodec := manager.capture.Audio().Codec()
+	manager.audioTrack, err = webrtc.NewTrackLocalStaticRTP(audioCodec.Capability, "audio", "stream")
 	if err != nil {
 		manager.logger.Fatal("Failed to create audio track", "error", err)
 	}
