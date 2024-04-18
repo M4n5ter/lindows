@@ -7,7 +7,7 @@ import (
 	peerConn "github.com/m4n5ter/lindows/pkg/webrtc"
 	"github.com/m4n5ter/lindows/pkg/yalog"
 
-	"github.com/pion/webrtc/v3"
+	"github.com/pion/webrtc/v4"
 )
 
 func main() {
