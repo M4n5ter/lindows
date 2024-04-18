@@ -3,8 +3,8 @@ package desktop
 import "github.com/m4n5ter/lindows/winapi"
 
 //nolint:unused
-func correspond(i uint8) int {
-	return key[i]
+func maping(i uint8) int { 
+	return key[i] 
 }
 
 //nolint:unused
