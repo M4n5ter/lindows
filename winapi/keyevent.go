@@ -99,26 +99,26 @@ func (k *KeyBonding) HasSHIFTR(b bool) {
 // Press key(s)
 func (k *KeyBonding) Press() error {
 	if k.hasALT {
-		downKey(_VK_ALT)
+		downKey(VK_ALT)
 	}
 	if k.hasALTGR {
-		downKey(_VK_ALT)
-		downKey(_VK_CTRL)
+		downKey(VK_ALT)
+		downKey(VK_CTRL)
 	}
 	if k.hasSHIFT {
-		downKey(_VK_SHIFT)
+		downKey(VK_SHIFT)
 	}
 	if k.hasCTRL {
-		downKey(_VK_CTRL)
+		downKey(VK_CTRL)
 	}
 	if k.hasRSHIFT {
-		downKey(_VK_RSHIFT)
+		downKey(VK_RSHIFT)
 	}
 	if k.hasRCTRL {
-		downKey(_VK_RCONTROL)
+		downKey(VK_RCONTROL)
 	}
 	if k.hasSuper {
-		downKey(_VK_LWIN)
+		downKey(VK_LWIN)
 	}
 	for _, key := range k.keys {
 		downKey(key)
@@ -129,29 +129,29 @@ func (k *KeyBonding) Press() error {
 // Release key(s)
 func (k *KeyBonding) Release() error {
 	if k.hasALT {
-		upKey(_VK_ALT)
+		upKey(VK_ALT)
 	}
 	if k.hasALTGR {
-		upKey(_VK_ALT)
-		upKey(_VK_CTRL)
+		upKey(VK_ALT)
+		upKey(VK_CTRL)
 	}
 	if k.hasSHIFT {
-		upKey(_VK_SHIFT)
+		upKey(VK_SHIFT)
 	}
 	if k.hasCTRL {
-		upKey(_VK_CTRL)
+		upKey(VK_CTRL)
 	}
 	if k.hasRSHIFT {
-		upKey(_VK_RSHIFT)
+		upKey(VK_RSHIFT)
 	}
 	if k.hasRCTRL {
-		upKey(_VK_RCONTROL)
+		upKey(VK_RCONTROL)
 	}
 	for _, key := range k.keys {
 		upKey(key)
 	}
 	if k.hasSuper {
-		upKey(_VK_LWIN)
+		upKey(VK_LWIN)
 	}
 	return nil
 }
@@ -169,7 +169,7 @@ func (k *KeyBonding) Launching() error {
 func downKey(key int) {
 	flag := 0
 	if key < 0xFFF { // Detect if the key code is virtual or no
-		flag |= _KEYEVENTF_SCANCODE
+		flag |= KEYEVENTF_SCANCODE
 	} else {
 		key -= 0xFFF
 	}
@@ -178,9 +178,9 @@ func downKey(key int) {
 }
 
 func upKey(key int) {
-	flag := _KEYEVENTF_KEYUP
+	flag := KEYEVENTF_KEYUP
 	if key < 0xFFF {
-		flag |= _KEYEVENTF_SCANCODE
+		flag |= KEYEVENTF_SCANCODE
 	} else {
 		key -= 0xFFF
 	}
@@ -191,17 +191,17 @@ func initKeyBD() error { return nil }
 
 const (
 	// I add 0xFFF for all Virtual key
-	_VK_SHIFT           = 0x10 + 0xFFF
-	_VK_CTRL            = 0x11 + 0xFFF
-	_VK_ALT             = 0x12 + 0xFFF
-	_VK_LSHIFT          = 0xA0 + 0xFFF
-	_VK_RSHIFT          = 0xA1 + 0xFFF
-	_VK_LCONTROL        = 0xA2 + 0xFFF
-	_VK_RCONTROL        = 0xA3 + 0xFFF
-	_VK_LWIN            = 0x5B + 0xFFF
-	_VK_RWIN            = 0x5C + 0xFFF
-	_KEYEVENTF_KEYUP    = 0x0002
-	_KEYEVENTF_SCANCODE = 0x0008
+	VK_SHIFT           = 0x10 + 0xFFF
+	VK_CTRL            = 0x11 + 0xFFF
+	VK_ALT             = 0x12 + 0xFFF
+	VK_LSHIFT          = 0xA0 + 0xFFF
+	VK_RSHIFT          = 0xA1 + 0xFFF
+	VK_LCONTROL        = 0xA2 + 0xFFF
+	VK_RCONTROL        = 0xA3 + 0xFFF
+	VK_LWIN            = 0x5B + 0xFFF
+	VK_RWIN            = 0x5C + 0xFFF
+	KEYEVENTF_KEYUP    = 0x0002
+	KEYEVENTF_SCANCODE = 0x0008
 )
 
 const (
