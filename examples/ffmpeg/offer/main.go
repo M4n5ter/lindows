@@ -1,14 +1,9 @@
-// SPDX-FileCopyrightText: 2023 The Pion community <https://pion.ly>
-// SPDX-License-Identifier: MIT
-
-// pion-to-pion is an example of two pion instances communicating directly!
 package main
 
 import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"flag"
 	"fmt"
 	"io"
 	"net/http"
@@ -25,14 +20,12 @@ func signalCandidate(addr string, c *webrtc.ICECandidate) error {
 	if err != nil {
 		return err
 	}
-
 	return resp.Body.Close()
 }
 
 func main() {
-	offerAddr := flag.String("offer-address", ":50000", "Address that the Offer HTTP server is hosted on.")
-	answerAddr := flag.String("answer-address", "127.0.0.1:60000", "Address that the Answer HTTP server is hosted on.")
-	flag.Parse()
+	offerAddr := ":50000"
+	answerAddr := "127.0.0.1:60000"
 
 	var candidatesMux sync.Mutex
 	pendingCandidates := make([]*webrtc.ICECandidate, 0)
@@ -70,7 +63,7 @@ func main() {
 		desc := peerConnection.RemoteDescription()
 		if desc == nil {
 			pendingCandidates = append(pendingCandidates, c)
-		} else if onICECandidateErr := signalCandidate(*answerAddr, c); onICECandidateErr != nil {
+		} else if onICECandidateErr := signalCandidate(answerAddr, c); onICECandidateErr != nil {
 			yalog.Error(onICECandidateErr)
 		}
 	})
@@ -102,39 +95,66 @@ func main() {
 		defer candidatesMux.Unlock()
 
 		for _, c := range pendingCandidates {
-			if onICECandidateErr := signalCandidate(*answerAddr, c); onICECandidateErr != nil {
+			if onICECandidateErr := signalCandidate(answerAddr, c); onICECandidateErr != nil {
 				yalog.Error(onICECandidateErr)
 			}
 		}
 	})
 
-	go func() { yalog.Error(http.ListenAndServe(*offerAddr, nil)) }()
+	go func() { yalog.Error(http.ListenAndServe(offerAddr, nil)) }()
 
-	// Create a datachannel with label 'data'
 	dataChannel, err := peerConnection.CreateDataChannel("hello", nil)
 	if err != nil {
 		yalog.Error(err)
 	}
 
-	// // Register channel opening handling
-	// dataChannel.OnOpen(func() {
-	// 	yalog.Infof("Data channel '%s'-'%d' open. Random messages will now be sent to any connected DataChannels every 5 seconds\n", dataChannel.Label(), dataChannel.ID())
-
-	// 	for range time.NewTicker(5 * time.Second).C {
-	// 		message := "offer ping"
-	// 		yalog.Infof("Sending '%s'\n", message)
-
-	// 		// Send the message as text
-	// 		sendTextErr := dataChannel.SendText(message)
-	// 		if sendTextErr != nil {
-	// 			yalog.Error(sendTextErr)
-	// 		}
-	// 	}
-	// })
-
 	// Register text message handling
 	dataChannel.OnMessage(func(msg webrtc.DataChannelMessage) {
 		yalog.Infof("Message from DataChannel '%s': '%s'\n", dataChannel.Label(), string(msg.Data))
+	})
+
+	videoTrack, videoTrackErr := webrtc.NewTrackLocalStaticSample(webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeH264}, "video", "1")
+	if videoTrackErr != nil {
+		yalog.Error(videoTrackErr)
+	}
+
+	rtpSender, videoTrackErr := peerConnection.AddTrack(videoTrack)
+	if videoTrackErr != nil {
+		yalog.Error(videoTrackErr)
+	}
+
+	// Read incoming RTCP packets
+	// Before these packets are returned they are processed by interceptors. For things
+	// like NACK this needs to be called. NACK 重新传输请求
+	go func() {
+		rtcpBuf := make([]byte, 1500)
+		for {
+			if _, _, rtcpErr := rtpSender.Read(rtcpBuf); rtcpErr != nil {
+				return
+			}
+		}
+	}()
+
+	peerConnection.OnTrack(func(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
+		yalog.Info("等待连接建立")
+
+		// Wait for connection established
+		<-iceConnectedCtx.Done()
+		yalog.Info("Track 开始接收")
+
+		// 持续读取轨道的RTP包，并对其进行处理
+		for {
+			yalog.Info("-------------------")
+			yalog.Infof("Track has started, of type %d: %s id %s kind %s n", track.PayloadType(), track.Codec().MimeType, track.ID(), track.Kind())
+			rtpPacket, _, readErr := track.ReadRTP()
+			if readErr != nil {
+				if readErr == io.EOF {
+					break // RTP流结束
+				}
+				yalog.Error(readErr)
+			}
+			yalog.Info("接收到RTP包", yalog.Any("rtpPacket", rtpPacket))
+		}
 	})
 
 	peerConnection.OnConnectionStateChange(func(s webrtc.PeerConnectionState) {
@@ -163,48 +183,6 @@ func main() {
 		}
 	})
 
-	file, err := os.Create("output.rtp")
-	if err != nil {
-		yalog.Error(err)
-	}
-	defer file.Close()
-
-	// 接收Track
-	peerConnection.OnTrack(func(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
-		yalog.Infof("Track has started, of type %d: %s n", track.PayloadType(), track.Codec().MimeType)
-
-		yalog.Info("等待连接建立")
-
-		// Wait for connection established
-		<-iceConnectedCtx.Done()
-
-		yalog.Info("Track 开始接收")
-
-		// 持续读取轨道的RTP包，并对其进行处理
-		for {
-			rtpPacket, _, readErr := track.ReadRTP()
-			if readErr != nil {
-				if readErr == io.EOF {
-					break // RTP流结束
-				}
-				yalog.Error(readErr)
-			}
-
-			yalog.Info("接收到RTP包", yalog.Any("rtpPacket", rtpPacket))
-
-			// 这里可以进行RTP包的处理，例如保存数据或解码成视频帧等
-			// 将RTP包数据写入到文件中
-			b, err := rtpPacket.Marshal()
-			if err != nil {
-				yalog.Error(err)
-			}
-			if _, writeErr := file.Write(b); writeErr != nil {
-				yalog.Error(writeErr)
-			}
-
-		}
-	})
-
 	// Create an offer to send to the other process
 	offer, err := peerConnection.CreateOffer(nil)
 	if err != nil {
@@ -222,7 +200,7 @@ func main() {
 	if err != nil {
 		yalog.Error(err)
 	}
-	resp, err := http.Post(fmt.Sprintf("http://%s/sdp", *answerAddr), "application/json; charset=utf-8", bytes.NewReader(payload))
+	resp, err := http.Post(fmt.Sprintf("http://%s/sdp", answerAddr), "application/json; charset=utf-8", bytes.NewReader(payload))
 	if err != nil {
 		yalog.Error(err)
 	} else if err := resp.Body.Close(); err != nil {
