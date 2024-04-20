@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"os"
 	"os/signal"
@@ -22,8 +21,8 @@ type Manager struct {
 }
 
 type wsMessage struct {
-	Event string `json:"event"`
-	Data  string `json:"data"`
+	Event   string `json:"event"`
+	PayLoad string `json:"payload"`
 }
 
 var (
@@ -74,14 +73,9 @@ func main() {
 		if desc == nil {
 			m.pendingCandidates = append(m.pendingCandidates, c)
 		} else {
-			candidateData, err := json.Marshal(c.ToJSON())
-			if err != nil {
-				yalog.Errorf("marshal answer error: %v\n", err)
-			}
-
 			if err := m.wsConn.WriteJSON(&wsMessage{
-				Event: "candidate",
-				Data:  string(candidateData),
+				Event:   "candidate",
+				PayLoad: c.ToJSON().Candidate,
 			}); err != nil {
 				yalog.Errorf("write message error: %v\n", err)
 			}
@@ -171,12 +165,12 @@ func process(ws *websocket.Conn, pConn *webrtc.PeerConnection, pendingCandidates
 			ws.Close()
 			return
 		}
-		if msg.Event == "offer" {
-			offer := webrtc.SessionDescription{}
-			if err := json.Unmarshal([]byte(msg.Data), &offer); err != nil {
-				yalog.Errorf("unmarshal offer error: %v\n", err)
+		switch msg.Event {
+		case "offer":
+			offer := webrtc.SessionDescription{
+				Type: webrtc.SDPTypeOffer,
+				SDP:  msg.PayLoad,
 			}
-
 			if err := pConn.SetRemoteDescription(offer); err != nil {
 				yalog.Errorf("set remote description error: %v\n", err)
 			}
@@ -187,47 +181,32 @@ func process(ws *websocket.Conn, pConn *webrtc.PeerConnection, pendingCandidates
 			if err := pConn.SetLocalDescription(answer); err != nil {
 				yalog.Errorf("set local description error: %v\n", err)
 			}
-			answerData, err := json.Marshal(answer)
-			if err != nil {
-				yalog.Errorf("marshal answer error: %v\n", err)
-			}
 			if err := ws.WriteJSON(&wsMessage{
-				Event: "answer",
-				Data:  string(answerData),
+				Event:   "answer",
+				PayLoad: answer.SDP,
 			}); err != nil {
 				yalog.Errorf("write message error: %v\n", err)
 			}
 			candidatesMux.Lock()
 			for _, c := range pendingCandidates {
-				if c == nil {
-					yalog.Info("c is nil")
-				}
-				candidateData, err := json.Marshal(c)
-				if err != nil {
-					yalog.Errorf("marshal answer error: %v\n", err)
-				}
 				if err := ws.WriteJSON(&wsMessage{
-					Event: "candidate",
-					Data:  string(candidateData),
+					Event:   "candidate",
+					PayLoad: c.ToJSON().Candidate,
 				}); err != nil {
 					yalog.Errorf("write message error: %v\n", err)
 				}
 			}
 			candidatesMux.Unlock()
-		} else if msg.Event == "candidate" {
-			// if pConn.RemoteDescription() != nil {
-			var candidate webrtc.ICECandidateInit
-			err := json.Unmarshal([]byte(msg.Data), &candidate)
-			if err != nil {
-				yalog.Errorf("parse ice candidate error: %v\n", err)
-			}
-			err = pConn.AddICECandidate(candidate)
+
+		case "candidate":
+			var candidateInit webrtc.ICECandidateInit
+			candidateInit.Candidate = msg.PayLoad
+			err = pConn.AddICECandidate(candidateInit)
 			if err != nil {
 				yalog.Errorf("add ice candidate error: %v\n", err)
 			}
-			// }
-		} else {
-			yalog.Errorf("unknown event: %s %s \n", msg.Event, msg.Data)
+		default:
+			yalog.Errorf("unknown event: %s %s \n", msg.Event, msg.PayLoad)
 		}
 	}
 }
