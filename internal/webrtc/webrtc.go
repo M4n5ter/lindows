@@ -1,14 +1,14 @@
 package webrtc
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"sync"
+	"time"
 
+	"github.com/gorilla/websocket"
 	"github.com/m4n5ter/lindows/internal/capture"
 	"github.com/m4n5ter/lindows/internal/config"
 	"github.com/m4n5ter/lindows/pkg/yalog"
@@ -21,16 +21,40 @@ type Manager struct {
 	audioTrack        *webrtc.TrackLocalStaticRTP
 	capture           capture.Manager
 	config            *config.WebRTC
-	conn              *webrtc.PeerConnection
-	pendingCandidates []*webrtc.ICECandidate
+	pc                *webrtc.PeerConnection
+	wc                *websocket.Conn
+	pendingCandidates *pendingCandidates
 }
 
-var candidatesMux sync.Mutex
+type pendingCandidates struct {
+	candidates []*webrtc.ICECandidate
+	sync.Mutex
+}
+
+type wsMessage struct {
+	Event string `json:"event"`
+	Data  string `json:"data"`
+}
+
+var upgrader = websocket.Upgrader{
+	CheckOrigin: func(r *http.Request) bool {
+		return true
+	},
+}
 
 func New(cfg *config.WebRTC) *Manager {
 	return &Manager{
-		logger: yalog.Default().With("module", "webrtc"),
+		logger:            yalog.Default().With("module", "webrtc"),
+		pendingCandidates: &pendingCandidates{candidates: make([]*webrtc.ICECandidate, 0)},
+		config:            cfg,
 	}
+}
+
+func (manager *Manager) EstablishConn(addr string) {
+	http.HandleFunc("/ws", manager.websocketHandler)
+	go func() {
+		manager.logger.Fatal("ListenAndServe: ", http.ListenAndServe(addr, nil))
+	}()
 }
 
 func (manager *Manager) Start() {
@@ -57,7 +81,7 @@ func (manager *Manager) Start() {
 		}
 	}()
 
-	videoSender, videoErr := manager.conn.AddTrack(manager.videoTrack)
+	videoSender, videoErr := manager.pc.AddTrack(manager.videoTrack)
 	if videoErr != nil {
 		manager.logger.Error("Failed to add video track", "error", videoErr)
 	}
@@ -90,7 +114,7 @@ func (manager *Manager) Start() {
 		}
 	}()
 
-	audioSender, audioErr := manager.conn.AddTrack(manager.audioTrack)
+	audioSender, audioErr := manager.pc.AddTrack(manager.audioTrack)
 	if audioErr != nil {
 		manager.logger.Error("Failed to add audio track", "error", audioErr)
 	}
@@ -108,124 +132,158 @@ func (manager *Manager) Start() {
 	)
 }
 
-func (manager *Manager) EstablishPeer(answerAddr, offerAddr string) {
-	peerConnection, err := webrtc.NewPeerConnection(webrtc.Configuration{
+func (manager *Manager) websocketHandler(w http.ResponseWriter, r *http.Request) {
+	var err error
+	manager.pc, err = webrtc.NewPeerConnection(webrtc.Configuration{
 		ICEServers: manager.config.ICEServers,
 	})
-
-	manager.conn = peerConnection
-
 	if err != nil {
-		manager.logger.Errorf("cannot create peer connection: %v\n", err.Error())
+		manager.logger.Fatal("Error creating peer connection:", err)
 	}
-
-	helloDataChannel, err := manager.conn.CreateDataChannel("hello", nil)
-	if err != nil {
-		manager.logger.Error(err)
-	}
-	helloDataChannel.OnOpen(func() {
-		manager.logger.Info("Data channel '%s'-'%d' open.Say hello", helloDataChannel.Label(), helloDataChannel.ID())
-		sendTextErr := helloDataChannel.SendText("Hello, World!")
-		if sendTextErr != nil {
-			panic(sendTextErr)
+	defer func() {
+		if cErr := manager.pc.Close(); cErr != nil {
+			manager.logger.Errorf("cannot close peerConnection: %v\n", cErr)
 		}
-	})
+	}()
+	manager.wc, err = upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		manager.logger.Fatal(err)
+	}
+	defer func() {
+		if cErr := manager.wc.Close(); cErr != nil {
+			manager.logger.Infof("cannot close wsConn: %v\n", cErr)
+		}
+	}()
 
-	peerConnection.OnICECandidate(func(c *webrtc.ICECandidate) {
+	manager.logger.Info("Connected to WebSocket server", "remote_addr", manager.wc.RemoteAddr())
+
+	manager.pc.OnICECandidate(func(c *webrtc.ICECandidate) {
 		if c == nil {
 			return
 		}
 
-		candidatesMux.Lock()
-		defer candidatesMux.Unlock()
+		manager.pendingCandidates.Lock()
+		defer manager.pendingCandidates.Unlock()
 
-		desc := peerConnection.RemoteDescription()
+		desc := manager.pc.RemoteDescription()
 		if desc == nil {
-			manager.pendingCandidates = append(manager.pendingCandidates, c)
-		} else if onICECandidateErr := signalCandidate(offerAddr, c); onICECandidateErr != nil {
-			panic(onICECandidateErr)
+			manager.pendingCandidates.candidates = append(manager.pendingCandidates.candidates, c)
+		} else {
+			candidateData, err := json.Marshal(c.ToJSON())
+			if err != nil {
+				manager.logger.Errorf("marshal answer error: %v\n", err)
+			}
+
+			if err := manager.wc.WriteJSON(&wsMessage{
+				Event: "candidate",
+				Data:  string(candidateData),
+			}); err != nil {
+				manager.logger.Errorf("write message error: %v\n", err)
+			}
 		}
 	})
 
-	peerConnection.OnICEConnectionStateChange(func(connectionState webrtc.ICEConnectionState) {
-		manager.logger.Debugf("Connection State has changed %s \n", connectionState.String())
-	})
-
-	peerConnection.OnConnectionStateChange(func(s webrtc.PeerConnectionState) {
+	manager.pc.OnConnectionStateChange(func(s webrtc.PeerConnectionState) {
 		manager.logger.Infof("Peer Connection State has changed: %s\n", s.String())
-		if s == webrtc.PeerConnectionStateFailed {
-			manager.logger.Error("Peer Connection has gone to failed exiting")
-		}
-
-		if s == webrtc.PeerConnectionStateClosed {
-			manager.logger.Error("Peer Connection has gone to closed exiting")
-		}
-	})
-
-	http.HandleFunc("/candidate", func(w http.ResponseWriter, r *http.Request) {
-		candidate, candidateErr := io.ReadAll(r.Body)
-		if candidateErr != nil {
-			manager.logger.Error(candidateErr.Error())
-		}
-		if candidateErr := peerConnection.AddICECandidate(webrtc.ICECandidateInit{Candidate: string(candidate)}); candidateErr != nil {
-			manager.logger.Error(candidateErr)
-		}
-	})
-
-	http.HandleFunc("/sdp", func(w http.ResponseWriter, r *http.Request) {
-		sdp := webrtc.SessionDescription{}
-		if err := json.NewDecoder(r.Body).Decode(&sdp); err != nil {
-			manager.logger.Error(err.Error())
-		}
-
-		manager.logger.Debugf("Received SDP: %v\n", sdp)
-
-		if err := peerConnection.SetRemoteDescription(sdp); err != nil {
-			manager.logger.Error(err)
-		}
-
-		answer, err := peerConnection.CreateAnswer(nil)
-		if err != nil {
-			manager.logger.Error(err)
-		}
-
-		payload, err := json.Marshal(answer)
-		if err != nil {
-			manager.logger.Error(err)
-		}
-		resp, err := http.Post(fmt.Sprintf("http://%s/sdp", offerAddr), "application/json; charset=utf-8", bytes.NewReader(payload))
-		if err != nil {
-			manager.logger.Error(err)
-		} else if closeErr := resp.Body.Close(); closeErr != nil {
-			manager.logger.Error(closeErr)
-		}
-
-		err = peerConnection.SetLocalDescription(answer)
-		if err != nil {
-			manager.logger.Error(err)
-		}
-
-		candidatesMux.Lock()
-		defer candidatesMux.Unlock()
-		for _, c := range manager.pendingCandidates {
-			if c == nil {
-				manager.logger.Info("c is nil")
+		switch s {
+		case webrtc.PeerConnectionStateFailed:
+			if err := manager.pc.Close(); err != nil {
+				manager.logger.Errorf("cannot close peerConnection: %v\n", err)
 			}
-			onICECandidateErr := signalCandidate(offerAddr, c)
-			if onICECandidateErr != nil {
-				manager.logger.Error(onICECandidateErr)
-			}
+		case webrtc.PeerConnectionStateClosed:
+			manager.logger.Info("Peer Connection Closed")
 		}
 	})
-	go func() { manager.logger.Error((http.ListenAndServe(answerAddr, nil).Error())) }()
-}
 
-func signalCandidate(addr string, c *webrtc.ICECandidate) error {
-	payload := []byte(c.ToJSON().Candidate)
-	resp, err := http.Post(fmt.Sprintf("http://%s/candidate", addr),
-		"application/json; charset=utf-8", bytes.NewReader(payload))
+	dataChannel, err := manager.pc.CreateDataChannel("hello", nil)
 	if err != nil {
-		return err
+		manager.logger.Error(err)
 	}
-	return resp.Body.Close()
+
+	// TODO
+	dataChannel.OnOpen(func() {
+		for range time.NewTicker(1 * time.Second).C {
+			err = dataChannel.SendText("Hello world")
+			if err != nil {
+				manager.logger.Error("SendText error: ", err)
+			}
+			manager.logger.Info("Sent 'Hello world' to data channel")
+		}
+	})
+
+	msg := &wsMessage{}
+	for {
+		err = manager.wc.ReadJSON(msg)
+		if err != nil {
+			manager.logger.Errorf("read message error: %v\n", err)
+			manager.wc.Close()
+			return
+		}
+		switch msg.Event {
+		case "offer":
+			offer := webrtc.SessionDescription{}
+			if err := json.Unmarshal([]byte(msg.Data), &offer); err != nil {
+				manager.logger.Errorf("unmarshal offer error: %v\n", err)
+			}
+
+			if err := manager.pc.SetRemoteDescription(offer); err != nil {
+				manager.logger.Errorf("set remote description error: %v\n", err)
+			}
+
+			answer, err := manager.pc.CreateAnswer(nil)
+			if err != nil {
+				manager.logger.Errorf("create answer error: %v\n", err)
+			}
+
+			if err := manager.pc.SetLocalDescription(answer); err != nil {
+				manager.logger.Errorf("set local description error: %v\n", err)
+			}
+
+			answerData, err := json.Marshal(answer)
+			if err != nil {
+				manager.logger.Errorf("marshal answer error: %v\n", err)
+			}
+
+			if err := manager.wc.WriteJSON(&wsMessage{
+				Event: "answer",
+				Data:  string(answerData),
+			}); err != nil {
+				manager.logger.Errorf("write message error: %v\n", err)
+			}
+
+			manager.pendingCandidates.Lock()
+
+			for _, c := range manager.pendingCandidates.candidates {
+				if c == nil {
+					manager.logger.Info("Candidates  Synchronization complete")
+				}
+				candidateData, err := json.Marshal(c)
+				if err != nil {
+					manager.logger.Errorf("marshal answer error: %v\n", err)
+				}
+				if err := manager.wc.WriteJSON(&wsMessage{
+					Event: "candidate",
+					Data:  string(candidateData),
+				}); err != nil {
+					manager.logger.Errorf("write message error: %v\n", err)
+				}
+			}
+
+			manager.pendingCandidates.Unlock()
+		case "candidate":
+			var candidate webrtc.ICECandidateInit
+			err := json.Unmarshal([]byte(msg.Data), &candidate)
+			if err != nil {
+				manager.logger.Errorf("parse ice candidate error: %v\n", err)
+			}
+
+			err = manager.pc.AddICECandidate(candidate)
+			if err != nil {
+				manager.logger.Errorf("add ice candidate error: %v\n", err)
+			}
+
+		default:
+			manager.logger.Info("unknown event: %s %s \n", msg.Event, msg.Data)
+		}
+	}
 }
