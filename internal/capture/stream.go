@@ -3,7 +3,11 @@ package capture
 import (
 	"fmt"
 	"net"
+	"os"
 	"os/exec"
+	"os/signal"
+	"strings"
+	"syscall"
 
 	"github.com/m4n5ter/lindows/internal/types/codec"
 	"github.com/m4n5ter/lindows/pkg/ffmpeg"
@@ -38,7 +42,7 @@ func (manager StreamManager) GetRTPChannel() chan rtp.Packet {
 	return manager.rtpChannel
 }
 
-func (manager *StreamManager) SetRTPChannel(audioVideoID string) (rtpChannel chan rtp.Packet, udpClose, delFunc func()) {
+func (manager *StreamManager) SetRTPChannel(target string) (cleanFunc func()) {
 	listener, err := net.ListenUDP("udp", &net.UDPAddr{
 		IP:   net.ParseIP("127.0.0.1"),
 		Port: 0,
@@ -56,14 +60,17 @@ func (manager *StreamManager) SetRTPChannel(audioVideoID string) (rtpChannel cha
 	rtpPort := listener.LocalAddr().(*net.UDPAddr).Port
 	manager.logger.Infof("listening on udp port: %d", rtpPort)
 
-	delFunc = manager.StartFFmpeg(rtpPort, audioVideoID)
+	delFunc := manager.StartFFmpeg(rtpPort, target)
 
-	rtpChannel = make(chan rtp.Packet, 1000)
+	rtpChannel := make(chan rtp.Packet, 1000)
 	buffer := make([]byte, 1600)
 	go func() {
 		for {
 			n, _, err := listener.ReadFrom(buffer)
 			if err != nil {
+				if strings.Contains(err.Error(), "use of closed network connection") {
+					break
+				}
 				manager.logger.Fatalf("failed to read from udp: %v", err)
 			}
 
@@ -76,7 +83,10 @@ func (manager *StreamManager) SetRTPChannel(audioVideoID string) (rtpChannel cha
 		}
 	}()
 
-	return rtpChannel, func() { listener.Close() }, delFunc
+	return func() {
+		delFunc()
+		listener.Close()
+	}
 }
 
 func (manager *StreamManager) StartFFmpeg(rtpPort int, input string) func() {
@@ -100,6 +110,17 @@ func (manager *StreamManager) StartFFmpeg(rtpPort int, input string) func() {
 	if err != nil {
 		manager.logger.Fatalf("failed to start ffmpeg: %v", err)
 	}
+
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+
+	go func() {
+		sig := <-c
+
+		if err := cmd.Process.Signal(sig); err != nil {
+			yalog.Fatalf("failed to send signal to proccess: %v", err)
+		}
+	}()
 
 	manager.logger.Info("ffmpeg started",
 		"pid", cmd.Process.Pid,
