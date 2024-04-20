@@ -1,7 +1,6 @@
 package webrtc
 
 import (
-	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -27,13 +26,13 @@ type Manager struct {
 }
 
 type pendingCandidates struct {
-	candidates []*webrtc.ICECandidate
+	iCECandidates []*webrtc.ICECandidate
 	sync.Mutex
 }
 
 type wsMessage struct {
-	Event string `json:"event"`
-	Data  string `json:"data"`
+	Event   string `json:"event"`
+	PayLoad string `json:"payload"`
 }
 
 var upgrader = websocket.Upgrader{
@@ -45,7 +44,7 @@ var upgrader = websocket.Upgrader{
 func New(cfg *config.WebRTC) *Manager {
 	return &Manager{
 		logger:            yalog.Default().With("module", "webrtc"),
-		pendingCandidates: &pendingCandidates{candidates: make([]*webrtc.ICECandidate, 0)},
+		pendingCandidates: &pendingCandidates{iCECandidates: make([]*webrtc.ICECandidate, 0)},
 		config:            cfg,
 	}
 }
@@ -167,16 +166,11 @@ func (manager *Manager) websocketHandler(w http.ResponseWriter, r *http.Request)
 
 		desc := manager.pc.RemoteDescription()
 		if desc == nil {
-			manager.pendingCandidates.candidates = append(manager.pendingCandidates.candidates, c)
+			manager.pendingCandidates.iCECandidates = append(manager.pendingCandidates.iCECandidates, c)
 		} else {
-			candidateData, err := json.Marshal(c.ToJSON())
-			if err != nil {
-				manager.logger.Errorf("marshal answer error: %v\n", err)
-			}
-
 			if err := manager.wc.WriteJSON(&wsMessage{
-				Event: "candidate",
-				Data:  string(candidateData),
+				Event:   "candidate",
+				PayLoad: c.ToJSON().Candidate,
 			}); err != nil {
 				manager.logger.Errorf("write message error: %v\n", err)
 			}
@@ -221,9 +215,9 @@ func (manager *Manager) websocketHandler(w http.ResponseWriter, r *http.Request)
 		}
 		switch msg.Event {
 		case "offer":
-			offer := webrtc.SessionDescription{}
-			if err := json.Unmarshal([]byte(msg.Data), &offer); err != nil {
-				manager.logger.Errorf("unmarshal offer error: %v\n", err)
+			offer := webrtc.SessionDescription{
+				Type: webrtc.SDPTypeOffer,
+				SDP:  msg.PayLoad,
 			}
 
 			if err := manager.pc.SetRemoteDescription(offer); err != nil {
@@ -239,31 +233,23 @@ func (manager *Manager) websocketHandler(w http.ResponseWriter, r *http.Request)
 				manager.logger.Errorf("set local description error: %v\n", err)
 			}
 
-			answerData, err := json.Marshal(answer)
-			if err != nil {
-				manager.logger.Errorf("marshal answer error: %v\n", err)
-			}
-
 			if err := manager.wc.WriteJSON(&wsMessage{
-				Event: "answer",
-				Data:  string(answerData),
+				Event:   "answer",
+				PayLoad: answer.SDP,
 			}); err != nil {
 				manager.logger.Errorf("write message error: %v\n", err)
 			}
 
 			manager.pendingCandidates.Lock()
 
-			for _, c := range manager.pendingCandidates.candidates {
+			for _, c := range manager.pendingCandidates.iCECandidates {
 				if c == nil {
 					manager.logger.Info("Candidates  Synchronization complete")
-				}
-				candidateData, err := json.Marshal(c)
-				if err != nil {
-					manager.logger.Errorf("marshal answer error: %v\n", err)
+					continue
 				}
 				if err := manager.wc.WriteJSON(&wsMessage{
-					Event: "candidate",
-					Data:  string(candidateData),
+					Event:   "candidate",
+					PayLoad: c.ToJSON().Candidate,
 				}); err != nil {
 					manager.logger.Errorf("write message error: %v\n", err)
 				}
@@ -272,18 +258,14 @@ func (manager *Manager) websocketHandler(w http.ResponseWriter, r *http.Request)
 			manager.pendingCandidates.Unlock()
 		case "candidate":
 			var candidate webrtc.ICECandidateInit
-			err := json.Unmarshal([]byte(msg.Data), &candidate)
-			if err != nil {
-				manager.logger.Errorf("parse ice candidate error: %v\n", err)
-			}
-
+			candidate.Candidate = msg.PayLoad
 			err = manager.pc.AddICECandidate(candidate)
 			if err != nil {
 				manager.logger.Errorf("add ice candidate error: %v\n", err)
 			}
 
 		default:
-			manager.logger.Info("unknown event: %s %s \n", msg.Event, msg.Data)
+			manager.logger.Info("unknown event: %s %s \n", msg.Event, msg.PayLoad)
 		}
 	}
 }
