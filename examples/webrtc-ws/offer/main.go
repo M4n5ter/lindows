@@ -79,7 +79,7 @@ func main() {
 		if desc == nil {
 			m.pendingCandidates = append(m.pendingCandidates, c)
 		} else {
-			candidateData, err := json.Marshal(c)
+			candidateData, err := json.Marshal(c.ToJSON())
 			if err != nil {
 				yalog.Errorf("marshal answer error: %v\n", err)
 			}
@@ -105,15 +105,13 @@ func main() {
 
 	m.pConn.OnConnectionStateChange(func(s webrtc.PeerConnectionState) {
 		yalog.Infof("Peer Connection State has changed: %s\n", s.String())
-
-		if s == webrtc.PeerConnectionStateFailed {
-			yalog.Info("Peer Connection has gone to failed exiting")
-			os.Exit(0)
-		}
-
-		if s == webrtc.PeerConnectionStateClosed {
-			yalog.Info("Peer Connection has gone to closed exiting")
-			os.Exit(0)
+		switch s {
+		case webrtc.PeerConnectionStateFailed:
+			if err := m.pConn.Close(); err != nil {
+				yalog.Errorf("cannot close peerConnection: %v\n", err)
+			}
+		case webrtc.PeerConnectionStateClosed:
+			yalog.Info("Peer Connection Closed")
 		}
 	})
 
@@ -177,12 +175,12 @@ func main() {
 				}
 				candidatesMux.Unlock()
 			} else if msg.Event == "candidate" {
-				var candidate webrtc.ICECandidate
+				var candidate webrtc.ICECandidateInit
 				err := json.Unmarshal([]byte(msg.Data), &candidate)
 				if err != nil {
 					yalog.Errorf("parse ice candidate error: %v\n", err)
 				}
-				err = m.pConn.AddICECandidate(webrtc.ICECandidateInit{Candidate: candidate.ToJSON().Candidate})
+				err = m.pConn.AddICECandidate(candidate)
 				if err != nil {
 					yalog.Errorf("add ice candidate error: %v\n", err)
 				}

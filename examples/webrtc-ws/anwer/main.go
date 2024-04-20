@@ -74,7 +74,7 @@ func main() {
 		if desc == nil {
 			m.pendingCandidates = append(m.pendingCandidates, c)
 		} else {
-			candidateData, err := json.Marshal(c)
+			candidateData, err := json.Marshal(c.ToJSON())
 			if err != nil {
 				yalog.Errorf("marshal answer error: %v\n", err)
 			}
@@ -216,12 +216,12 @@ func process(ws *websocket.Conn, pConn *webrtc.PeerConnection, pendingCandidates
 			candidatesMux.Unlock()
 		} else if msg.Event == "candidate" {
 			// if pConn.RemoteDescription() != nil {
-			var candidate webrtc.ICECandidate
+			var candidate webrtc.ICECandidateInit
 			err := json.Unmarshal([]byte(msg.Data), &candidate)
 			if err != nil {
 				yalog.Errorf("parse ice candidate error: %v\n", err)
 			}
-			err = pConn.AddICECandidate(webrtc.ICECandidateInit{Candidate: candidate.ToJSON().Candidate})
+			err = pConn.AddICECandidate(candidate)
 			if err != nil {
 				yalog.Errorf("add ice candidate error: %v\n", err)
 			}
