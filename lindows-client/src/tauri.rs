@@ -1,8 +1,6 @@
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 
-
-
 #[derive(Serialize, Deserialize)]
 pub struct GreetArgs<'a> {
     name: &'a str,
@@ -15,11 +13,8 @@ pub async fn greet(name: &str) -> String {
 }
 
 pub mod clipboard {
-    use js_sys::Promise;
-    use serde::{Deserialize, Serialize};
-    use wasm_bindgen_futures::JsFuture;
-
     use super::{invoke, invoke_without_args};
+    use serde::{Deserialize, Serialize};
 
     #[derive(Serialize, Deserialize)]
     #[serde(rename_all = "camelCase")]
@@ -54,7 +49,8 @@ pub mod clipboard {
 
     pub async fn read_text() -> String {
         let clip_response = invoke_without_args("plugin:clipboard-manager|read_text").await;
-        let clipboard_contents: ClipboardContents = serde_wasm_bindgen::from_value(clip_response).unwrap();
+        let clipboard_contents: ClipboardContents =
+            serde_wasm_bindgen::from_value(clip_response).unwrap();
         match clipboard_contents {
             ClipboardContents::PlainText { text } => text,
             _ => panic!("Unexpected clipboard contents"),
@@ -73,25 +69,29 @@ pub mod clipboard {
             text: text.to_string(),
         };
 
-        let data = WriteTextData {
-            data: clip_kind,
-        };
+        let data = WriteTextData { data: clip_kind };
 
-        invoke("plugin:clipboard-manager|write_text", serde_wasm_bindgen::to_value(&data).unwrap()).await;
+        invoke(
+            "plugin:clipboard-manager|write_text",
+            serde_wasm_bindgen::to_value(&data).unwrap(),
+        )
+        .await;
     }
 
     // https://github.com/tauri-apps/plugins-workspace/blob/1f9e7ab4a0f97d2fa9d6f139e39e20b5a737cd46/plugins/clipboard-manager/guest-js/index.ts#L33
     #[derive(Serialize)]
     #[serde(rename_all = "camelCase")]
     struct WriteTextData {
-        data: ClipKind
+        data: ClipKind,
     }
 
     pub async fn write_image(image: Vec<u8>) {
-        let clip_kind = ClipKind::Image {
-            image,
-        };
-        invoke("plugin:clipboard-manager|write_image", serde_wasm_bindgen::to_value(&clip_kind).unwrap()).await;
+        let clip_kind = ClipKind::Image { image };
+        invoke(
+            "plugin:clipboard-manager|write_image",
+            serde_wasm_bindgen::to_value(&clip_kind).unwrap(),
+        )
+        .await;
     }
 }
 
@@ -113,7 +113,7 @@ extern "C" {
 // #[wasm_bindgen]
 // extern "C" {
 //     pub type Resource;
-    
+
 //     #[wasm_bindgen(structural, method, getter)]
 //     pub fn rid(this: &Resource) -> u32;
 
@@ -125,7 +125,7 @@ extern "C" {
 // #[wasm_bindgen(extends = Resource)]
 // extern "C" {
 //     pub type Image;
-    
+
 //     #[wasm_bindgen(constructor)]
 //     pub fn new(rid: u32) -> Image;
 // }
