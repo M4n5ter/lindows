@@ -196,6 +196,7 @@ func (manager *Manager) websocketHandler(w http.ResponseWriter, r *http.Request)
 				manager.pc.ConnectionState() == webrtc.PeerConnectionStateClosed {
 				manager.wc.Close()
 				manager.logger.Infof("wsConn closed: %v\n", err)
+				break
 			} else {
 				manager.logger.Errorf("read message error: %v\n", err)
 			}
@@ -242,6 +243,7 @@ func (manager *Manager) websocketHandler(w http.ResponseWriter, r *http.Request)
 					manager.logger.Errorf("write message error: %v\n", err)
 				}
 			}
+			manager.pendingCandidates.iCECandidates = nil
 
 			manager.pendingCandidates.Unlock()
 		case "candidate":
