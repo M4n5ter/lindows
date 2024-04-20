@@ -3,7 +3,7 @@ package desktop
 import "github.com/m4n5ter/lindows/winapi"
 
 //nolint:unused
-func maping(i uint8) int {
+func mapping(i uint8) int {
 	return key[i]
 }
 
