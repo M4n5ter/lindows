@@ -38,7 +38,7 @@ func (manager StreamManager) GetRTPChannel() chan rtp.Packet {
 	return manager.rtpChannel
 }
 
-func (manager *StreamManager) SetRTPChannel(audioVideoID string) (rtpChannel chan rtp.Packet, udpClose func(), delFunc func()) {
+func (manager *StreamManager) SetRTPChannel(audioVideoID string) (rtpChannel chan rtp.Packet, udpClose, delFunc func()) {
 	listener, err := net.ListenUDP("udp", &net.UDPAddr{
 		IP:   net.ParseIP("127.0.0.1"),
 		Port: 0,
@@ -76,9 +76,7 @@ func (manager *StreamManager) SetRTPChannel(audioVideoID string) (rtpChannel cha
 		}
 	}()
 
-	return rtpChannel, func() {
-		listener.Close()
-	}, delFunc
+	return rtpChannel, func() { listener.Close() }, delFunc
 }
 
 func (manager *StreamManager) StartFFmpeg(rtpPort int, input string) func() {
