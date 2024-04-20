@@ -3,7 +3,9 @@ package main
 import (
 	"fmt"
 	"net"
+	"os"
 	"os/exec"
+	"os/signal"
 
 	"github.com/m4n5ter/lindows/pkg/ffmpeg"
 	"github.com/m4n5ter/lindows/pkg/yalog"
@@ -84,5 +86,17 @@ func startFFmpeg(rtpPort int, input string) {
 		"pid", cmd.Process.Pid,
 		"rtp_url", rtpURL)
 
+	// 捕捉退出信号
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt)
+
+	go func() {
+		sig := <-c // 接收信号
+
+		// 退出时发送SIGTERM给子进程，命令其退出
+		if err := cmd.Process.Signal(sig); err != nil {
+			yalog.Fatalf("failed to send signal to proccess: %v", err)
+		}
+	}()
 	cmd.Wait()
 }
