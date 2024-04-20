@@ -5,7 +5,6 @@ import (
 	"io"
 	"net/http"
 	"sync"
-	"time"
 
 	"github.com/gorilla/websocket"
 	"github.com/m4n5ter/lindows/internal/capture"
@@ -189,30 +188,19 @@ func (manager *Manager) websocketHandler(w http.ResponseWriter, r *http.Request)
 		}
 	})
 
-	dataChannel, err := manager.pc.CreateDataChannel("hello", nil)
-	if err != nil {
-		manager.logger.Error(err)
-	}
-
-	// TODO
-	dataChannel.OnOpen(func() {
-		for range time.NewTicker(1 * time.Second).C {
-			err = dataChannel.SendText("Hello world")
-			if err != nil {
-				manager.logger.Error("SendText error: ", err)
-			}
-			manager.logger.Info("Sent 'Hello world' to data channel")
-		}
-	})
-
 	msg := &wsMessage{}
 	for {
 		err = manager.wc.ReadJSON(msg)
 		if err != nil {
-			manager.logger.Errorf("read message error: %v\n", err)
-			manager.wc.Close()
-			return
+			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) ||
+				manager.pc.ConnectionState() == webrtc.PeerConnectionStateClosed {
+				manager.wc.Close()
+				manager.logger.Infof("wsConn closed: %v\n", err)
+			} else {
+				manager.logger.Errorf("read message error: %v\n", err)
+			}
 		}
+
 		switch msg.Event {
 		case "offer":
 			offer := webrtc.SessionDescription{
