@@ -133,9 +133,9 @@ func (manager Manager) ReceiveMsg(f func(dc *webrtc.DataChannel)) {
 	manager.pc.OnDataChannel(f)
 }
 
-func (manager Manager) SendMsg(label string, option *webrtc.DataChannelInit) (sendChan, receiveChan chan string, close func() error, err error) {
-	sendChan = make(chan string, 10)
-	receiveChan = make(chan string, 10)
+func (manager Manager) SendMsg(label string, option *webrtc.DataChannelInit) (chan<- string, <-chan string, func() error, error) {
+	sendChan := make(chan string, 10)
+	receiveChan := make(chan string, 10)
 	dc, err := manager.pc.CreateDataChannel(label, nil)
 	if err != nil {
 		return nil, nil, nil, err
