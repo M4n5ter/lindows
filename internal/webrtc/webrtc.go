@@ -55,13 +55,11 @@ func (manager *Manager) EstablishConn(addr string) {
 	}()
 }
 
-func (manager *Manager) Start() {
-	var err error
-
+func (manager *Manager) Start() (err error) {
 	// Video
 	manager.videoTrack, err = webrtc.NewTrackLocalStaticRTP(manager.videoTrack.Codec(), "video", "stream")
 	if err != nil {
-		manager.logger.Fatal("Failed to create video track", "error", err)
+		return err
 	}
 
 	go func() {
@@ -81,7 +79,7 @@ func (manager *Manager) Start() {
 
 	videoSender, videoErr := manager.pc.AddTrack(manager.videoTrack)
 	if videoErr != nil {
-		manager.logger.Error("Failed to add video track", "error", videoErr)
+		return videoErr
 	}
 	go func() {
 		rtcpBuf := make([]byte, 1500)
@@ -95,7 +93,7 @@ func (manager *Manager) Start() {
 	// Audio
 	manager.audioTrack, err = webrtc.NewTrackLocalStaticRTP(manager.audioTrack.Codec(), "audio", "stream")
 	if err != nil {
-		manager.logger.Fatal("Failed to create audio track", "error", err)
+		return err
 	}
 
 	go func() {
@@ -114,7 +112,7 @@ func (manager *Manager) Start() {
 
 	audioSender, audioErr := manager.pc.AddTrack(manager.audioTrack)
 	if audioErr != nil {
-		manager.logger.Error("Failed to add audio track", "error", audioErr)
+		return audioErr
 	}
 	go func() {
 		rtcpBuf := make([]byte, 1500)
@@ -128,6 +126,36 @@ func (manager *Manager) Start() {
 	manager.logger.Info("WebRTC manager started",
 		"ice_servers", manager.config.ICEServers,
 	)
+	return nil
+}
+
+func (manager Manager) ReceiveMsg(f func(dc *webrtc.DataChannel)) {
+	manager.pc.OnDataChannel(f)
+}
+
+func (manager Manager) SendMsg(label string, option *webrtc.DataChannelInit) (sendChan, receiveChan chan string, close func() error, err error) {
+	sendChan = make(chan string, 10)
+	receiveChan = make(chan string, 10)
+	dc, err := manager.pc.CreateDataChannel(label, nil)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	dc.OnOpen(func() {
+		for {
+			msg := <-sendChan
+			if err := dc.SendText(msg); err != nil {
+				manager.logger.Error("Failed to send message", "error", err)
+			}
+		}
+	})
+	dc.OnMessage(func(msg webrtc.DataChannelMessage) {
+		if msg.IsString {
+			receiveChan <- string(msg.Data)
+		}
+		manager.logger.Debug("Received message is not string", "data", msg.Data)
+	})
+	return sendChan, receiveChan, dc.Close, nil
 }
 
 func (manager *Manager) websocketHandler(w http.ResponseWriter, r *http.Request) {
