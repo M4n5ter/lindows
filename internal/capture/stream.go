@@ -51,7 +51,8 @@ func (manager *StreamManager) SetRTPChannel(target string) (cleanFunc func()) {
 		manager.logger.Fatalf("failed to listen udp: %v", err)
 	}
 
-	bufferSize := 300 << 10
+	// ffmpeg输出数据: bitrate=2513.9kbits/s 需要2513.9/8=314.2375KB/s
+	bufferSize := 375 << 10
 	err = listener.SetReadBuffer(bufferSize)
 	if err != nil {
 		manager.logger.Fatalf("failed to set read buffer: %v", err)
@@ -63,7 +64,7 @@ func (manager *StreamManager) SetRTPChannel(target string) (cleanFunc func()) {
 	delFunc := manager.StartFFmpeg(rtpPort, target)
 
 	rtpChannel := make(chan rtp.Packet, 1000)
-	buffer := make([]byte, 1600)
+	buffer := make([]byte, 1500)
 	go func() {
 		for {
 			n, _, err := listener.ReadFrom(buffer)
@@ -99,8 +100,8 @@ func (manager *StreamManager) StartFFmpeg(rtpPort int, input string) func() {
 
 	cmd := exec.Command(ffmpegPath,
 		"-re",
-		// "-f", "lavfi", "-i", "testsrc=size=640x480:rate=30",
-		"-f", "gdigrab", "-i", input,
+		"-f", "lavfi", "-i", "testsrc=size=640x480:rate=30",
+		// "-f", "gdigrab", "-i", input,a
 		"-vcodec", "libvpx", "-cpu-used", "5",
 		"-g", "10",
 		"-error-resilient", "1", "-auto-alt-ref", "1",
