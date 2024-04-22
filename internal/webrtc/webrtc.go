@@ -297,8 +297,15 @@ func (manager *Manager) websocketHandler(w http.ResponseWriter, r *http.Request)
 				}
 			}
 			manager.pendingCandidates.iCECandidates = nil
-
 			manager.pendingCandidates.Unlock()
+		case "answer":
+			answer := webrtc.SessionDescription{
+				Type: webrtc.SDPTypeAnswer,
+				SDP:  msg.PayLoad,
+			}
+			if err := manager.pc.SetRemoteDescription(answer); err != nil {
+				manager.logger.Errorf("set remote description error: %v\n", err)
+			}
 		case "candidate":
 			var candidate webrtc.ICECandidateInit
 			candidate.Candidate = msg.PayLoad
@@ -306,7 +313,15 @@ func (manager *Manager) websocketHandler(w http.ResponseWriter, r *http.Request)
 			if err != nil {
 				manager.logger.Errorf("add ice candidate error: %v\n", err)
 			}
-
+		case "ping":
+			if err := manager.wc.WriteJSON(&wsMessage{
+				Event:   "pong",
+				PayLoad: "",
+			}); err != nil {
+				manager.logger.Errorf("write message error: %v\n", err)
+			}
+		case "pong":
+			manager.logger.Debug("pong received")
 		default:
 			manager.logger.Info("unknown event: %s %s \n", msg.Event, msg.PayLoad)
 		}
