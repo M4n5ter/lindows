@@ -4,6 +4,7 @@ use crate::components::screen::Screen;
 use crate::components::sidebar::Sidebar;
 use crate::state::provide_state;
 
+#[allow(non_snake_case)]
 #[component]
 pub fn App() -> impl IntoView {
     provide_state();
