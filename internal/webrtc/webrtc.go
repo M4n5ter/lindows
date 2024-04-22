@@ -172,6 +172,41 @@ func (manager *Manager) Connected() <-chan struct{} {
 	return connected
 }
 
+func (manager Manager) AddTrack(track *webrtc.TrackLocalStaticRTP) error {
+	offer, err := manager.pc.CreateOffer(nil)
+	if err != nil {
+		manager.logger.Error("Error creating offer:", err)
+	}
+	if err := manager.pc.SetLocalDescription(offer); err != nil {
+		manager.logger.Error("Error setting local description:", err)
+	}
+
+	if err := manager.wc.WriteJSON(&wsMessage{
+		Event:   "offer",
+		PayLoad: offer.SDP,
+	}); err != nil {
+		manager.logger.Error("Error sending offer:", err)
+	}
+
+	rtpSender, err := manager.pc.AddTrack(track)
+	if err != nil {
+		return err
+	}
+
+	// Read incoming RTCP packets
+	// Before these packets are returned they are processed by interceptors. For things
+	// like NACK this needs to be called.
+	go func() {
+		rtcpBuf := make([]byte, 1500)
+		for {
+			if _, _, rtcpErr := rtpSender.Read(rtcpBuf); rtcpErr != nil {
+				return
+			}
+		}
+	}()
+	return nil
+}
+
 func (manager *Manager) websocketHandler(w http.ResponseWriter, r *http.Request) {
 	var err error
 	manager.pc, err = webrtc.NewPeerConnection(webrtc.Configuration{
