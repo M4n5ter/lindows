@@ -7,10 +7,12 @@ import (
 )
 
 type Manager struct {
-	logger  *yalog.Logger
-	desktop desktop.Manager
-	audio   *StreamManager
-	video   *StreamManager
+	logger     *yalog.Logger
+	desktop    desktop.Manager
+	audio      *StreamManager
+	video      *StreamManager
+	audioClean func()
+	videoClean func()
 }
 
 func New(desktop desktop.Manager, cfg *config.Capture) *Manager {
@@ -23,6 +25,8 @@ func New(desktop desktop.Manager, cfg *config.Capture) *Manager {
 }
 
 func (manager *Manager) Start() {
+	manager.videoClean = manager.video.SetRTPChannel("gdigrab", "desktop", "-vcodec libvpx")
+	manager.audioClean = manager.audio.SetRTPChannel("dshow", "audio", "-f dshow -i audio=virtual-audio-capturer")
 	manager.logger.Info("Capture manager started")
 }
 
@@ -32,4 +36,9 @@ func (manager *Manager) Audio() StreamManager {
 
 func (manager *Manager) Video() StreamManager {
 	return *manager.video
+}
+
+func (manager *Manager) Close() {
+	manager.audioClean()
+	manager.videoClean()
 }

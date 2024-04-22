@@ -42,7 +42,7 @@ func (manager StreamManager) GetRTPChannel() chan rtp.Packet {
 	return manager.rtpChannel
 }
 
-func (manager *StreamManager) SetRTPChannel(target string) (cleanFunc func()) {
+func (manager *StreamManager) SetRTPChannel(container, target, options string) (cleanFunc func()) {
 	listener, err := net.ListenUDP("udp", &net.UDPAddr{
 		IP:   net.ParseIP("127.0.0.1"),
 		Port: 0,
@@ -61,7 +61,7 @@ func (manager *StreamManager) SetRTPChannel(target string) (cleanFunc func()) {
 	rtpPort := listener.LocalAddr().(*net.UDPAddr).Port
 	manager.logger.Infof("listening on udp port: %d", rtpPort)
 
-	delFunc := manager.StartFFmpeg(rtpPort, target)
+	delFunc := manager.StartFFmpeg(container, target, options, rtpPort)
 
 	rtpChannel := make(chan rtp.Packet, 1000)
 	buffer := make([]byte, 1500)
@@ -90,7 +90,7 @@ func (manager *StreamManager) SetRTPChannel(target string) (cleanFunc func()) {
 	}
 }
 
-func (manager *StreamManager) StartFFmpeg(rtpPort int, input string) func() {
+func (manager *StreamManager) StartFFmpeg(container, input, options string, rtpPort int) func() {
 	ffmpegPath, delFunc, err := ffmpeg.TempFFmpeg()
 	if err != nil {
 		manager.logger.Fatalf("failed to create temp ffmpeg: %v", err)
@@ -100,9 +100,9 @@ func (manager *StreamManager) StartFFmpeg(rtpPort int, input string) func() {
 
 	cmd := exec.Command(ffmpegPath,
 		"-re",
-		"-f", "lavfi", "-i", "testsrc=size=640x480:rate=30",
-		// "-f", "gdigrab", "-i", input,a
-		"-vcodec", "libvpx", "-cpu-used", "5",
+		// "-f", "lavfi", "-i", "testsrc=size=640x480:rate=30",
+		"-f", container, "-i", input,
+		options, "-cpu-used", "5",
 		"-g", "10",
 		"-error-resilient", "1", "-auto-alt-ref", "1",
 		"-f", "rtp", rtpURL)
