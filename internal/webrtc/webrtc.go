@@ -5,10 +5,12 @@ import (
 	"io"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/gorilla/websocket"
 	"github.com/m4n5ter/lindows/internal/capture"
 	"github.com/m4n5ter/lindows/internal/config"
+	"github.com/m4n5ter/lindows/internal/types/codec"
 	"github.com/m4n5ter/lindows/pkg/yalog"
 	"github.com/pion/webrtc/v4"
 )
@@ -17,7 +19,7 @@ type Manager struct {
 	logger            *yalog.Logger
 	videoTrack        *webrtc.TrackLocalStaticRTP
 	audioTrack        *webrtc.TrackLocalStaticRTP
-	capture           capture.Manager
+	capture           *capture.Manager
 	config            *config.WebRTC
 	pc                *webrtc.PeerConnection
 	wc                *websocket.Conn
@@ -40,11 +42,12 @@ var upgrader = websocket.Upgrader{
 	},
 }
 
-func New(cfg *config.WebRTC) *Manager {
+func New(capture *capture.Manager, cfg *config.WebRTC) *Manager {
 	return &Manager{
 		logger:            yalog.Default().With("module", "webrtc"),
 		pendingCandidates: &pendingCandidates{iCECandidates: make([]*webrtc.ICECandidate, 0)},
 		config:            cfg,
+		capture:           capture,
 	}
 }
 
@@ -56,8 +59,9 @@ func (manager *Manager) EstablishConn(addr string) {
 }
 
 func (manager *Manager) Start() (err error) {
+	manager.capture.Start()
 	// Video
-	manager.videoTrack, err = webrtc.NewTrackLocalStaticRTP(manager.videoTrack.Codec(), "video", "stream")
+	manager.videoTrack, err = webrtc.NewTrackLocalStaticRTP(codec.VP8().Capability, "video", "stream")
 	if err != nil {
 		return err
 	}
@@ -91,7 +95,7 @@ func (manager *Manager) Start() (err error) {
 	}()
 
 	// Audio
-	manager.audioTrack, err = webrtc.NewTrackLocalStaticRTP(manager.audioTrack.Codec(), "audio", "stream")
+	manager.audioTrack, err = webrtc.NewTrackLocalStaticRTP(codec.Opus().Capability, "audio", "stream")
 	if err != nil {
 		return err
 	}
@@ -158,6 +162,16 @@ func (manager Manager) SendMsg(label string, option *webrtc.DataChannelInit) (ch
 	return sendChan, receiveChan, dc.Close, nil
 }
 
+func (manager *Manager) Connected() <-chan struct{} {
+	connected := make(chan struct{})
+	manager.pc.OnICEConnectionStateChange(func(s webrtc.ICEConnectionState) {
+		if s == webrtc.ICEConnectionStateConnected {
+			close(connected)
+		}
+	})
+	return connected
+}
+
 func (manager *Manager) websocketHandler(w http.ResponseWriter, r *http.Request) {
 	var err error
 	manager.pc, err = webrtc.NewPeerConnection(webrtc.Configuration{
@@ -182,6 +196,17 @@ func (manager *Manager) websocketHandler(w http.ResponseWriter, r *http.Request)
 	}()
 
 	manager.logger.Info("Connected to WebSocket server", "remote_addr", manager.wc.RemoteAddr())
+
+	go func() {
+		for range time.NewTicker(5 * time.Second).C {
+			if err := manager.wc.WriteJSON(&wsMessage{
+				Event:   "ping",
+				PayLoad: "ping",
+			}); err != nil {
+				manager.logger.Errorf("write message error: %v\n", err)
+			}
+		}
+	}()
 
 	manager.pc.OnICECandidate(func(c *webrtc.ICECandidate) {
 		if c == nil {
