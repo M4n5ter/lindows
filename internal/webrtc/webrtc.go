@@ -172,7 +172,7 @@ func (manager *Manager) Connected() <-chan struct{} {
 	return connected
 }
 
-func (manager Manager) AddTrack(track *webrtc.TrackLocalStaticRTP) error {
+func (manager Manager) AddTrack(track *webrtc.TrackLocal) error {
 	offer, err := manager.pc.CreateOffer(nil)
 	if err != nil {
 		manager.logger.Error("Error creating offer:", err)
@@ -188,7 +188,7 @@ func (manager Manager) AddTrack(track *webrtc.TrackLocalStaticRTP) error {
 		manager.logger.Error("Error sending offer:", err)
 	}
 
-	rtpSender, err := manager.pc.AddTrack(track)
+	rtpSender, err := manager.pc.AddTrack(*track)
 	if err != nil {
 		return err
 	}
