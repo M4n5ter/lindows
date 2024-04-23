@@ -1,5 +1,9 @@
+#![feature(lazy_cell)]
+
 mod app;
 pub mod components;
+pub mod state;
+pub mod tauri;
 
 use app::*;
 use leptos::*;
