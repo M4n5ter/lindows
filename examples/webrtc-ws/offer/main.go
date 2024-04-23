@@ -144,6 +144,33 @@ func main() {
 			}
 
 			switch msg.Event {
+			case "offer":
+				offer := webrtc.SessionDescription{
+					Type: webrtc.SDPTypeOffer,
+					SDP:  msg.PayLoad,
+				}
+				m.pConn.SetRemoteDescription(webrtc.SessionDescription{})
+				if err := m.pConn.SetRemoteDescription(offer); err != nil {
+					yalog.Errorf("set remote description error: %v\n", err)
+				}
+				answer, err := m.pConn.CreateAnswer(nil)
+				if err != nil {
+					yalog.Errorf("create answer error: %v\n", err)
+				}
+				if err := m.pConn.SetLocalDescription(answer); err != nil {
+					yalog.Errorf("set local description error: %v\n", err)
+				}
+				if err := m.wsConn.WriteJSON(&wsMessage{
+					Event:   "answer",
+					PayLoad: answer.SDP,
+				}); err != nil {
+					yalog.Errorf("write message error: %v\n", err)
+				}
+
+				m.pConn.OnTrack(func(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
+					yalog.Infof("Track has started, of kind: %s\n", track.Kind())
+				})
+
 			case "answer":
 				answer := webrtc.SessionDescription{
 					Type: webrtc.SDPTypeAnswer,
