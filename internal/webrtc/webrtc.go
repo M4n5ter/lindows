@@ -1,8 +1,6 @@
 package webrtc
 
 import (
-	"errors"
-	"io"
 	"net/http"
 	"sync"
 	"time"
@@ -17,8 +15,8 @@ import (
 
 type Manager struct {
 	logger            *yalog.Logger
-	videoTrack        *webrtc.TrackLocalStaticRTP
-	audioTrack        *webrtc.TrackLocalStaticRTP
+	videoTrack        webrtc.TrackLocal
+	audioTrack        webrtc.TrackLocal
 	capture           *capture.Manager
 	config            *config.WebRTC
 	pc                *webrtc.PeerConnection
@@ -61,23 +59,32 @@ func (manager *Manager) EstablishConn(addr string) {
 func (manager *Manager) Start() (err error) {
 	manager.capture.Start()
 	// Video
-	manager.videoTrack, err = webrtc.NewTrackLocalStaticRTP(codec.VP8().Capability, "video", "stream")
+	manager.videoTrack, err = webrtc.NewTrackLocalStaticSample(codec.H264().Capability, "video", "stream")
+	if err != nil {
+		return err
+	}
+
+	err = manager.AddTrack(manager.videoTrack)
 	if err != nil {
 		return err
 	}
 
 	go func() {
 		for {
-			packet, ok := <-manager.capture.Video().GetRTPChannel()
+			packet, ok := <-manager.capture.Video().GetStreamChannel()
 			if !ok {
 				manager.logger.Debug("Video sample channel closed")
 				continue
 			}
 
-			if err := manager.videoTrack.WriteRTP(&packet); err != nil && errors.Is(err, io.ErrClosedPipe) {
-				manager.logger.Error("Video track closed", "error", err)
+			if videoTrack, ok := manager.videoTrack.(*webrtc.TrackLocalStaticSample); ok {
+				err := videoTrack.WriteSample(*packet)
+				if err != nil {
+					manager.logger.Error("Video track closed", "error", err)
+				}
+			} else {
+				manager.logger.Error("Unknown video track type")
 			}
-
 		}
 	}()
 
@@ -93,39 +100,41 @@ func (manager *Manager) Start() (err error) {
 			}
 		}
 	}()
+	// TODO: Add audio track
+	// // Audio
+	// manager.audioTrack, err = webrtc.NewTrackLocalStaticSample(codec.Opus().Capability, "audio", "stream")
+	// if err != nil {
+	// 	return err
+	// }
 
-	// Audio
-	manager.audioTrack, err = webrtc.NewTrackLocalStaticRTP(codec.Opus().Capability, "audio", "stream")
-	if err != nil {
-		return err
-	}
+	// err = manager.AddTrack(manager.videoTrack)
+	// if err != nil {
+	// 	return err
+	// }
 
-	go func() {
-		for {
-			packet, ok := <-manager.capture.Audio().GetRTPChannel()
-			if !ok {
-				manager.logger.Debug("Audio sample channel closed")
-				continue
-			}
+	// go func() {
+	// 	for {
+	// 		packet, ok := <-manager.capture.Audio().GetStreamChannel()
+	// 		if !ok {
+	// 			manager.logger.Debug("Audio sample channel closed")
+	// 			continue
+	// 		}
 
-			if err := manager.audioTrack.WriteRTP(&packet); err != nil && errors.Is(err, io.ErrClosedPipe) {
-				manager.logger.Error("Audio track closed", "error", err)
-			}
-		}
-	}()
+	// 		if audioTrack, ok := manager.audioTrack.(*webrtc.TrackLocalStaticSample); ok {
+	// 			err := audioTrack.WriteSample(*packet)
+	// 			if err != nil {
+	// 				manager.logger.Error("Video track closed", "error", err)
+	// 			}
+	// 		} else {
+	// 			manager.logger.Error("Unknown video track type")
+	// 		}
+	// 	}
+	// }()
 
-	audioSender, audioErr := manager.pc.AddTrack(manager.audioTrack)
-	if audioErr != nil {
-		return audioErr
-	}
-	go func() {
-		rtcpBuf := make([]byte, 1500)
-		for {
-			if _, _, rtcpErr := audioSender.Read(rtcpBuf); rtcpErr != nil {
-				manager.logger.Error("Failed to read RTCP", "error", rtcpErr)
-			}
-		}
-	}()
+	// err = manager.AddTrack(manager.audioTrack)
+	// if err != nil {
+	// 	return err
+	// }
 
 	manager.logger.Info("WebRTC manager started",
 		"ice_servers", manager.config.ICEServers,
@@ -172,7 +181,7 @@ func (manager *Manager) Connected() <-chan struct{} {
 	return connected
 }
 
-func (manager Manager) AddTrack(track *webrtc.TrackLocal) error {
+func (manager Manager) AddTrack(track webrtc.TrackLocal) error {
 	offer, err := manager.pc.CreateOffer(nil)
 	if err != nil {
 		manager.logger.Error("Error creating offer:", err)
@@ -188,7 +197,7 @@ func (manager Manager) AddTrack(track *webrtc.TrackLocal) error {
 		manager.logger.Error("Error sending offer:", err)
 	}
 
-	rtpSender, err := manager.pc.AddTrack(*track)
+	rtpSender, err := manager.pc.AddTrack(track)
 	if err != nil {
 		return err
 	}

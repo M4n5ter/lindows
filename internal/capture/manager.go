@@ -25,17 +25,20 @@ func New(desktop desktop.Manager, cfg *config.Capture) *Manager {
 }
 
 func (manager *Manager) Start() {
-	manager.videoClean = manager.video.SetRTPChannel("gdigrab", "desktop", "-vcodec libvpx")
-	manager.audioClean = manager.audio.SetRTPChannel("dshow", "audio", "-f dshow -i audio=virtual-audio-capturer")
+	err := manager.audio.SetStreamChannel("audio")
+	if err != nil {
+		manager.logger.Error(err)
+	}
+	// manager.video.SetStreamChannel("video")
 	manager.logger.Info("Capture manager started")
 }
 
-func (manager *Manager) Audio() StreamManager {
-	return *manager.audio
+func (manager *Manager) Audio() *StreamManager {
+	return manager.audio
 }
 
-func (manager *Manager) Video() StreamManager {
-	return *manager.video
+func (manager *Manager) Video() *StreamManager {
+	return manager.video
 }
 
 func (manager *Manager) Close() {
