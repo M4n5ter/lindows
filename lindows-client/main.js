@@ -14,7 +14,8 @@ function createWindow() {
         }
     });
 
-    const isDev = process.env.NODE_ENV !== 'production';
+    // const isDev = process.env.NODE_ENV !== 'production';
+    const isDev = false;
 
     const DEV_URL = 'http://localhost:1420';
     const PROD_URL = url.format({

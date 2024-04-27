@@ -6,6 +6,16 @@ module.exports = {
     asar: true,
   },
   rebuildConfig: {},
+  packagerConfig: {
+    asar: true,
+    ignore: [
+      "target",
+      "node_modules",
+      "^/src",
+      "src",
+      "src-tauri"
+    ]
+  },
   makers: [
     {
       name: '@electron-forge/maker-squirrel',
