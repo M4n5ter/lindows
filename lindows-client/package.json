@@ -2,14 +2,51 @@
     "name": "lindows-client",
     "private": true,
     "version": "0.1.0",
-    "description": "",
+    "description": "Lindows client",
+    "main": "main.js",
+    "author": "M4n5ter",
+    "license": "None",
+    "scripts": {
+        "start": "set NODE_ENV=production&&electron-forge start",
+        "start:dev": "set NODE_ENV=development&&electron-forge start",
+        "package": "electron-forge package",
+        "make": "trunk build --release&&electron-forge make"
+    },
+    "build": {
+        "appId": "wang.m4n5ter.lindows",
+        "productName": "lindows-client",
+        "directories": {
+            "output": "build",
+            "buildResources": "assets"
+        },
+        "win": {
+            "icon": "src-tauri/icons/icon.ico"
+        },
+        "mac": {
+            "icon": "src-tauri/icons/icon.icns"
+        },
+        "linux": {
+            "icon": "src-tauri/icons/"
+        }
+    },
     "devDependencies": {
+        "@electron-forge/cli": "^7.4.0",
+        "@electron-forge/maker-deb": "^7.4.0",
+        "@electron-forge/maker-rpm": "^7.4.0",
+        "@electron-forge/maker-squirrel": "^7.4.0",
+        "@electron-forge/maker-zip": "^7.4.0",
+        "@electron-forge/plugin-auto-unpack-natives": "^7.4.0",
+        "@electron-forge/plugin-fuses": "^7.4.0",
+        "@electron/fuses": "^1.8.0",
         "@tailwindcss/typography": "^0.5",
+        "concurrently": "^8.2.2",
         "daisyui": "^4",
+        "electron": "^30.0.1",
         "tailwindcss": "^3"
     },
     "dependencies": {
         "@tauri-apps/api": "^1.5.3",
-        "@tauri-apps/cli": "^1.5.3"
+        "@tauri-apps/cli": "^1.5.3",
+        "electron-squirrel-startup": "^1.0.0"
     }
 }
