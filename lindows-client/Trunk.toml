@@ -1,5 +1,7 @@
 [build]
 target = "./index.html"
+# Electron 需要相对路径
+public_url = "./"
 
 [watch]
 ignore = ["./src-tauri"]
