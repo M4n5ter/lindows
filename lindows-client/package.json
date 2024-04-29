@@ -3,14 +3,15 @@
     "private": true,
     "version": "0.1.0",
     "description": "Lindows client",
-    "main": "main.js",
+    "main": "src-electron/main.js",
     "author": "M4n5ter",
     "license": "None",
     "scripts": {
         "start": "set NODE_ENV=production&&electron-forge start",
         "start:dev": "set NODE_ENV=development&&electron-forge start",
-        "package": "set NODE_ENV=production&&electron-forge package",
-        "make": "set NODE_ENV=production&&trunk build --release&&electron-forge make"
+        "package": "set NODE_ENV=production&&trunk build --release&&electron-forge package",
+        "make": "set NODE_ENV=production&&trunk build --release&&electron-forge make",
+        "make:deb": "set NODE_ENV=production&&trunk build --release&&electron-forge make --platform=linux --arch=x64 --target=deb"
     },
     "build": {
         "appId": "wang.m4n5ter.lindows",
@@ -39,14 +40,13 @@
         "@electron-forge/plugin-fuses": "^7.4.0",
         "@electron/fuses": "^1.8.0",
         "@tailwindcss/typography": "^0.5",
-        "concurrently": "^8.2.2",
         "daisyui": "^4",
         "electron": "^30.0.1",
         "tailwindcss": "^3"
     },
     "dependencies": {
-        "@tauri-apps/api": "^1.5.3",
-        "@tauri-apps/cli": "^1.5.3",
+        "@tauri-apps/api": "^1",
+        "@tauri-apps/cli": "^1",
         "electron-squirrel-startup": "^1.0.0"
     }
 }

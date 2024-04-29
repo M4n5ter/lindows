@@ -1,9 +1,10 @@
-#![feature(lazy_cell)]
-
 mod app;
 pub mod components;
+pub mod electron;
+pub mod message_generated;
 pub mod state;
 pub mod tauri;
+pub mod user_event;
 
 use app::*;
 use leptos::*;

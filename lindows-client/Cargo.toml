@@ -40,6 +40,7 @@ serde_json = { workspace = true }
 reqwest = { version = "0.12.3", features = ["json"] }
 anyhow = "1.0.82"
 lazy_static = "1.4.0"
+flatbuffers = "24.3.25"
 
 [workspace]
 members = ["src-tauri"]

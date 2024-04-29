@@ -9,7 +9,7 @@ pub fn Sidebar() -> impl IntoView {
     let session = expect_context::<RwSignal<Session>>();
 
     view! {
-        <div class="flex flex-row">
+        <div class="flex flex-row justify-center">
             <div class="bg-base-100">
                 <ul class="menu space-y-2">
                     <li>

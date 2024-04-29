@@ -4,18 +4,31 @@ const { FuseV1Options, FuseVersion } = require('@electron/fuses');
 module.exports = {
   packagerConfig: {
     asar: true,
-  },
-  rebuildConfig: {},
-  packagerConfig: {
-    asar: true,
     ignore: [
-      "target",
+      "assets",
+      "public",
+      "css",
+      "fonts",
       "node_modules",
-      "^/src",
-      "src",
-      "src-tauri"
+      "target",
+      "^src$",
+      "^src-tauri$",
+      "^\\.vscode$",
+      "^\\.gitignore$",
+      "^\\.git$",
+      "^\\.github$",
+      "^forge.config.js$",
+      "Trunk.toml",
+      "Cargo.toml",
+      "Cargo.lock",
+      "index.html",
+      "README.md",
+      "tailwind.config.js",
+      "package-lock.json",
+      "\\.taurignore",
     ]
   },
+  rebuildConfig: {},
   makers: [
     {
       name: '@electron-forge/maker-squirrel',
@@ -29,10 +42,10 @@ module.exports = {
       name: '@electron-forge/maker-deb',
       config: {},
     },
-    {
-      name: '@electron-forge/maker-rpm',
-      config: {},
-    },
+    // {
+    //   name: '@electron-forge/maker-rpm',
+    //   config: {},
+    // },
   ],
   plugins: [
     {

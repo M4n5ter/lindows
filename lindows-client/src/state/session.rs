@@ -7,9 +7,7 @@ use serde::{Deserialize, Serialize};
 use wasm_bindgen::{closure::Closure, JsCast as _};
 use wasm_bindgen_futures::JsFuture;
 use web_sys::{
-    MediaStream, MessageEvent, RtcConfiguration, RtcIceCandidate, RtcIceCandidateInit,
-    RtcIceServer, RtcPeerConnection, RtcPeerConnectionIceEvent, RtcSdpType,
-    RtcSessionDescriptionInit, RtcTrackEvent, WebSocket,
+    MediaStream, MessageEvent, RtcConfiguration, RtcDataChannel, RtcIceCandidate, RtcIceCandidateInit, RtcIceServer, RtcPeerConnection, RtcPeerConnectionIceEvent, RtcSdpType, RtcSessionDescriptionInit, RtcTrackEvent, WebSocket
 };
 
 use crate::state::config::LindowsConfig;
@@ -26,6 +24,9 @@ pub struct Session {
     pub pending_candidates: Rc<Mutex<Vec<RtcIceCandidate>>>,
     pub ws: Rc<WebSocket>,
     pub peer: Rc<RtcPeerConnection>,
+    pub key_data_channel: Rc<RtcDataChannel>,
+    pub mouse_data_channel: Rc<RtcDataChannel>,
+    pub common_data_channel: Rc<RtcDataChannel>,
     pub address: RwSignal<String>,
 }
 
@@ -53,10 +54,14 @@ impl Session {
             .get_untracked();
         let ws = Rc::new(WebSocket::new(&url).expect("Create WebSocket"));
 
+        let peer_cloned = peer.clone();
         Self {
             pending_candidates,
             ws,
             peer,
+            key_data_channel: Rc::new(peer_cloned.create_data_channel("key")),
+            mouse_data_channel: Rc::new(peer_cloned.create_data_channel("mouse")),
+            common_data_channel: Rc::new(peer_cloned.create_data_channel("common")),
             address: RwSignal::new(url),
         }
     }
@@ -111,11 +116,12 @@ impl Session {
         // on iceconnectionstatechange 事件回调
         set_peer_oniceconnectionstatechange(self.peer.clone());
 
-        // 创建 DataChannel
-        let peer = self.peer.clone();
-        let data_channel = Rc::new(peer.create_data_channel("hello"));
+    }
+
+    pub fn set_data_channel(&mut self) {
+        let common_data_channel = self.common_data_channel.clone();
         {
-            let data_channel_cloned = data_channel.clone();
+            let data_channel_cloned = common_data_channel.clone();
             let onopen_callback = Closure::wrap(Box::new(move || {
                 console_log("Data channel opened");
                 data_channel_cloned
@@ -123,7 +129,7 @@ impl Session {
                     .expect("Send data");
             }) as Box<dyn FnMut()>);
 
-            data_channel.set_onopen(Some(onopen_callback.as_ref().unchecked_ref()));
+            common_data_channel.set_onopen(Some(onopen_callback.as_ref().unchecked_ref()));
             onopen_callback.forget();
 
             let onmessage_callback = Closure::wrap(Box::new(move |event: MessageEvent| {
@@ -134,7 +140,7 @@ impl Session {
                 }
             }) as Box<dyn FnMut(MessageEvent)>);
 
-            data_channel.set_onmessage(Some(onmessage_callback.as_ref().unchecked_ref()));
+            common_data_channel.set_onmessage(Some(onmessage_callback.as_ref().unchecked_ref()));
             onmessage_callback.forget();
         }
     }
