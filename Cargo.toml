@@ -1,0 +1,21 @@
+[package]
+name = "lindows"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "liblindows"
+path = "lindows-rs/src/lib.rs"
+# crate-type = ["cdylib", "staticlib", "rlib"]
+crate-type = ["rlib"]
+
+[[bin]]
+name = "lindows"
+path = "lindows-rs/src/bin/lindows.rs"
+
+[workspace]
+members = ["lindows-rs/lindows-utils"]
+
+[profile.release]
+lto = true
+codegen-units = 1
