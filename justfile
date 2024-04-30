@@ -61,9 +61,13 @@ test:
     @go test -v {{join(".", "...")}}
 
 # lint - 代码检查
-lint: dep-golangci-lint
+lint: dep-golangci-lint && nilaway
     @go mod tidy 
     @golangci-lint run
+
+# nilaway - 分析代码中的 nil 指针
+nilaway: dep-nilaway
+    @nilaway -include-pkgs="github.com/m4n5ter/lindows" {{join(root, "...")}}
 
 format: dep-gofumpt
     @gofumpt -extra -w {{root}}
@@ -78,6 +82,9 @@ dep-golangci-lint:
 # a stricter gofmt - 一个更严格的 gofmt
 dep-gofumpt:
     @go install mvdan.cc/gofumpt@latest
+
+dep-nilaway:
+    @go install go.uber.org/nilaway/cmd/nilaway@latest
 
 #===================================== targets end ===========================================#
 

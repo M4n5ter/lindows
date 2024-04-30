@@ -169,9 +169,9 @@ func Error(msg any, args ...any) {
 
 // Panic logs an error message and exit the current program with `1` error code.
 //
-//	yalog.Panic("hello world")
-//	yalog.Panic("hello world", "age", 18, "name", "foo")
-func Panic(msg any, args ...any) {
+//	yalog.Fatal("hello world")
+//	yalog.Fatal("hello world", "age", 18, "name", "foo")
+func Fatal(msg any, args ...any) {
 	r := newRecord(slog.LevelError, fmt.Sprintf("%v", msg))
 	r.Add(args...)
 	handle(nil, r, slog.LevelError)
@@ -216,8 +216,8 @@ func Errorf(format string, args ...any) {
 
 // Fatalf logs and formats an error message and exit the current program with `1` error code. Can't take attributes.
 //
-//	yalog.Panicf("hello world")
-//	yalog.Panicf("hello %s", "world")
+//	yalog.Fatalf("hello world")
+//	yalog.Fatalf("hello %s", "world")
 func Fatalf(format string, args ...any) {
 	r := newRecord(slog.LevelError, format, args...)
 	handle(nil, r, slog.LevelError)
