@@ -12,7 +12,7 @@ pub struct LindowsConfig {
 impl LindowsConfig {
     pub fn new() -> Self {
         Self {
-            answer_addr: RwSignal::new("ws://192.168.1.109:8080/ws".to_string()),
+            answer_addr: RwSignal::new("ws://127.0.0.1:11111".to_string()),
         }
     }
 }
