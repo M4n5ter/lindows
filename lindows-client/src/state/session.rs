@@ -1,13 +1,17 @@
 use std::{rc::Rc, sync::Mutex};
 
+use js_sys::Reflect;
 use leptos::{
-    create_rw_signal, expect_context, leptos_dom::logging::console_log, provide_context, spawn_local, window, RwSignal, SignalGetUntracked as _
+    create_rw_signal, expect_context, leptos_dom::logging::console_log, provide_context,
+    spawn_local, window, RwSignal, SignalGetUntracked as _,
 };
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::{closure::Closure, JsCast as _};
 use wasm_bindgen_futures::JsFuture;
 use web_sys::{
-    MediaStream, MessageEvent, RtcConfiguration, RtcDataChannel, RtcIceCandidate, RtcIceCandidateInit, RtcIceServer, RtcPeerConnection, RtcPeerConnectionIceEvent, RtcSdpType, RtcSessionDescriptionInit, RtcTrackEvent, WebSocket
+    MediaStream, MessageEvent, RtcConfiguration, RtcDataChannel, RtcIceCandidate,
+    RtcIceCandidateInit, RtcIceServer, RtcPeerConnection, RtcPeerConnectionIceEvent, RtcSdpType,
+    RtcSessionDescription, RtcSessionDescriptionInit, RtcTrackEvent, WebSocket,
 };
 
 use crate::state::config::LindowsConfig;
@@ -66,10 +70,9 @@ impl Session {
         }
     }
 
-
     pub fn connect(&mut self) {
         console_log(&format!("Connecting to {}", self.address.get_untracked()));
-        // self.ws.close().expect("Close WebSocket");
+        let _ = self.ws.close();
         self.ws = Rc::new(WebSocket::new(&self.address.get_untracked()).expect("Create WebSocket"));
         self.set_ws_callback();
         console_log("WebSocket connected")
@@ -79,20 +82,21 @@ impl Session {
         let offer = JsFuture::from(self.peer.create_offer())
             .await
             .expect("Create offer");
-        let offer = offer
-            .dyn_into::<web_sys::RtcSessionDescription>()
-            .expect("Offer");
-        let sdp_type = offer.type_();
-        let sdp = offer.sdp();
-        let mut session_description_init = RtcSessionDescriptionInit::new(sdp_type);
+        let sdp = Reflect::get(&offer, &"sdp".into())
+            .expect("Get sdp")
+            .as_string()
+            .expect("Sdp as string");
+
+        let mut session_description_init = RtcSessionDescriptionInit::new(RtcSdpType::Offer);
         session_description_init.sdp(&sdp);
         JsFuture::from(self.peer.set_local_description(&session_description_init))
             .await
             .expect("Set local description");
 
+        let sdp = RtcSessionDescription::new_with_description_init_dict(&session_description_init).expect("Offer");
         let offer_msg = WSMessage {
             event: "offer".to_string(),
-            payload: sdp,
+            payload: sdp.sdp(),
         };
         let offer_msg_str = serde_json::to_string(&offer_msg).expect("Serialize offer message");
 
@@ -115,7 +119,6 @@ impl Session {
 
         // on iceconnectionstatechange 事件回调
         set_peer_oniceconnectionstatechange(self.peer.clone());
-
     }
 
     pub fn set_data_channel(&mut self) {
@@ -145,9 +148,7 @@ impl Session {
         }
     }
 
-    pub fn set_ws_callback(
-        &self,
-    ) {
+    pub fn set_ws_callback(&self) {
         let ws_cloned = self.ws.clone();
         let peer = self.peer.clone();
         let pending_candidates = self.pending_candidates.clone();
@@ -175,8 +176,9 @@ impl Session {
                 }
             }
         }) as Box<dyn FnMut(MessageEvent)>);
-    
-        self.ws.set_onmessage(Some(onmessage_callback.as_ref().unchecked_ref()));
+
+        self.ws
+            .set_onmessage(Some(onmessage_callback.as_ref().unchecked_ref()));
         onmessage_callback.forget();
 
         // on close 事件回调
@@ -184,8 +186,49 @@ impl Session {
             console_log("WebSocket closed");
         }) as Box<dyn FnMut()>);
 
-        self.ws.set_onclose(Some(onclose_callback.as_ref().unchecked_ref()));
+        self.ws
+            .set_onclose(Some(onclose_callback.as_ref().unchecked_ref()));
         onclose_callback.forget();
+
+        // on error 事件回调
+        let onerror_callback = Closure::wrap(Box::new(move || {
+            console_log("WebSocket error");
+        }) as Box<dyn FnMut()>);
+
+        self.ws
+            .set_onerror(Some(onerror_callback.as_ref().unchecked_ref()));
+        onerror_callback.forget();
+
+        // on open 事件回调
+        let onopen_callback = Closure::wrap(Box::new(move || {
+            console_log("WebSocket opened");
+        }) as Box<dyn FnMut()>);
+
+        self.ws
+            .set_onopen(Some(onopen_callback.as_ref().unchecked_ref()));
+        onopen_callback.forget();
+
+        console_log("WebSocket callbacks set");
+
+        // keep alive
+        // let ws = self.ws.clone();
+        // spawn_local(async move {
+        //     loop {
+        //         ws.send_with_str(
+        //             &serde_json::to_string(&WSMessage {
+        //                 event: "ping".to_string(),
+        //                 payload: "".to_string(),
+        //             })
+        //             .expect("Serialize ping message"),
+        //         )
+        //         .expect("Send ping");
+                
+        //         wasm_timer::Delay::new(std::time::Duration::from_secs(5))
+        //         .await
+        //         .expect("Delay");
+        //     }
+        // });
+
     }
 }
 
@@ -222,7 +265,7 @@ fn set_peer_ontrack(peer: Rc<RtcPeerConnection>) {
 
             let tracks = js_sys::Array::new();
             tracks.push(&track);
-            
+
             let video_stream = MediaStream::new_with_tracks(&tracks).expect("Create video stream");
             video_html_element.set_src_object(Some(&video_stream));
 
@@ -295,8 +338,6 @@ fn set_peer_oniceconnectionstatechange(peer: Rc<RtcPeerConnection>) {
     ));
     oniceconnectionstatechange_callback.forget();
 }
-
-
 
 fn handle_ws_message(
     message: WSMessage,
@@ -375,10 +416,14 @@ fn handle_ws_message(
             });
         }
         "ping" => {
-            ws.send_with_str(&serde_json::to_string(&WSMessage {
-                event: "pong".to_string(),
-                payload: "".to_string(),
-            }).expect("Serialize pong message")).expect("Send pong");
+            ws.send_with_str(
+                &serde_json::to_string(&WSMessage {
+                    event: "pong".to_string(),
+                    payload: "".to_string(),
+                })
+                .expect("Serialize pong message"),
+            )
+            .expect("Send pong");
         }
         _ => {
             console_log("Unknown message event");
