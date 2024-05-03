@@ -1,31 +1,42 @@
 use std::{collections::HashMap, sync::Arc};
 
 use futures_util::{SinkExt, StreamExt};
+use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
 use tokio::{
     net::{TcpListener, TcpStream},
     sync::Mutex,
 };
 use tokio_tungstenite::{accept_async, tungstenite, WebSocketStream};
-use tracing::{error, info, instrument, trace};
+use tracing::{debug, error, info, instrument, trace};
 use webrtc::{
     api::{
-        interceptor_registry::register_default_interceptors, media_engine::MediaEngine, APIBuilder,
+        interceptor_registry::register_default_interceptors,
+        media_engine::{MediaEngine, MIME_TYPE_VP8},
+        APIBuilder,
     },
+    data_channel::data_channel_message::DataChannelMessage,
     ice_transport::{
         ice_candidate::{RTCIceCandidate, RTCIceCandidateInit},
         ice_server::RTCIceServer,
     },
     interceptor::registry::Registry,
     peer_connection::{
-        configuration::RTCConfiguration, sdp::session_description::RTCSessionDescription,
-        RTCPeerConnection,
+        configuration::RTCConfiguration, peer_connection_state::RTCPeerConnectionState,
+        sdp::session_description::RTCSessionDescription, RTCPeerConnection,
     },
+    rtp_transceiver::{rtp_codec::RTCRtpCodecCapability, RTCPFeedback},
+    track::track_local::{track_local_static_sample::TrackLocalStaticSample, TrackLocal},
 };
+
+lazy_static! {
+    pub static ref VIDEO_TRACK: Arc<Mutex<Option<Arc<TrackLocalStaticSample>>>> =
+        Arc::new(Mutex::new(None));
+}
 
 #[derive(Debug)]
 pub struct Conn {
-    pub peer_connection: Arc<Mutex<RTCPeerConnection>>,
+    pub peer_connection: Arc<RTCPeerConnection>,
     pub pending_candidates: Arc<Mutex<Vec<RTCIceCandidate>>>,
     pub tcp_listener: TcpListener,
     ws_streams: Arc<Mutex<StreamsMap>>,
@@ -57,11 +68,52 @@ impl Conn {
             .with_interceptor_registry(registry)
             .build();
 
-        let peer_connection = Arc::new(Mutex::new(
+        let peer_connection = Arc::new(
             api.new_peer_connection(config)
                 .await
                 .expect("Failed to create peer connection"),
+        );
+
+        let video_rtcp_feedback = vec![
+            RTCPFeedback {
+                typ: "goog-remb".to_owned(),
+                parameter: "".to_owned(),
+            },
+            RTCPFeedback {
+                typ: "ccm".to_owned(),
+                parameter: "fir".to_owned(),
+            },
+            RTCPFeedback {
+                typ: "nack".to_owned(),
+                parameter: "".to_owned(),
+            },
+            RTCPFeedback {
+                typ: "nack".to_owned(),
+                parameter: "pli".to_owned(),
+            },
+        ];
+        let video_track = Arc::new(TrackLocalStaticSample::new(
+            RTCRtpCodecCapability {
+                mime_type: MIME_TYPE_VP8.to_owned(),
+                clock_rate: 90000,
+                channels: 0,
+                sdp_fmtp_line: "".to_owned(),
+                rtcp_feedback: video_rtcp_feedback,
+            },
+            "video".to_owned(),
+            "stream".to_owned(),
         ));
+
+        let rtp_sender = peer_connection
+            .add_track(Arc::clone(&video_track) as Arc<dyn TrackLocal + Send + Sync>)
+            .await
+            .expect("Failed to add track");
+        tokio::spawn(async move {
+            let mut rtcp_buf = vec![0u8; 1500];
+            while let Ok((_, _)) = rtp_sender.read(&mut rtcp_buf).await {}
+            anyhow::Result::<()>::Ok(())
+        });
+        *VIDEO_TRACK.lock().await = Some(video_track);
 
         let pending_candidates = Arc::new(Mutex::new(vec![]));
 
@@ -78,8 +130,33 @@ impl Conn {
         }
     }
 
+    pub async fn send_offer(
+        pc: Arc<RTCPeerConnection>,
+        ws_streams: Arc<Mutex<StreamsMap>>,
+    ) -> anyhow::Result<()> {
+        let offer = pc.create_offer(None).await?;
+        pc.set_local_description(offer.clone()).await?;
+
+        let ws_streams = ws_streams.lock().await;
+        for ws_stream in ws_streams.values() {
+            let ws_stream = ws_stream.clone();
+            let ws_message = WSMessage {
+                event: "offer".to_owned(),
+                payload: offer.unmarshal()?.marshal(),
+            };
+            let ws_message = serde_json::to_string(&ws_message)?;
+            ws_stream
+                .lock()
+                .await
+                .send(tungstenite::Message::Text(ws_message))
+                .await?;
+        }
+
+        Ok(())
+    }
+
     pub async fn close(&self) -> anyhow::Result<()> {
-        self.peer_connection.lock().await.close().await?;
+        self.peer_connection.close().await?;
         Ok(())
     }
 
@@ -118,13 +195,52 @@ impl Conn {
     }
 
     #[instrument]
+    pub async fn set_on_data_channel(&self) {
+        self.peer_connection.on_data_channel(Box::new(move |d| {
+            let d_label = d.label().to_owned();
+
+            Box::pin(async move {
+                let d1 = d.clone();
+                let d_label1 = d_label.clone();
+                let label = d_label1.to_owned();
+                let label = label.as_str();
+
+                d1.on_open(Box::new(move || {
+                    debug!("Data channel opened: {d_label1}");
+
+                    Box::pin(async move { if d_label1 == "common" {} })
+                }));
+
+                match label {
+                    "key" => d1.on_message(Box::new(move |_msg: DataChannelMessage| {
+                        debug!("Received key: {:?}", _msg.data);
+                        Box::pin(async {})
+                    })),
+                    "mouse" => {
+                        d1.on_message(Box::new(move |_msg: DataChannelMessage| Box::pin(async {})))
+                    }
+                    "common" => {
+                        d1.on_message(Box::new(move |_msg: DataChannelMessage| Box::pin(async {})))
+                    }
+                    _ => d1.on_message(Box::new(move |msg: DataChannelMessage| {
+                        debug!("Received unknown: {:?}", msg.data);
+                        Box::pin(async {})
+                    })),
+                }
+            })
+        }));
+    }
+
+    #[instrument]
     pub async fn set_on_ice_candidate(&self) {
         let pc = Arc::downgrade(&self.peer_connection);
-        let pending_candidates = self.pending_candidates.clone();
-        let ws_streams = self.ws_streams.clone();
+        let pending_candidates = Arc::downgrade(&self.pending_candidates);
+        let ws_streams = Arc::downgrade(&self.ws_streams);
 
-        self.peer_connection.lock().await.on_ice_candidate(Box::new(
-            move |c: Option<RTCIceCandidate>| {
+        self.peer_connection
+            .on_ice_candidate(Box::new(move |c: Option<RTCIceCandidate>| {
+                info!("ICE candidate: {:?}", c);
+
                 let pc1 = pc.clone();
                 let pending_candidates1 = pending_candidates.clone();
                 let ws_streams1 = ws_streams.clone();
@@ -132,11 +248,13 @@ impl Conn {
                 Box::pin(async move {
                     if let Some(candidate) = c {
                         if let Some(pc) = pc1.upgrade() {
-                            let desc = pc.lock().await.remote_description().await;
+                            let desc = pc.remote_description().await;
                             if desc.is_none() {
-                                pending_candidates1.lock().await.push(candidate);
-                            } else {
-                                for ws_stream in ws_streams1.lock().await.values() {
+                                if let Some(pending_candidates) = pending_candidates1.upgrade() {
+                                    pending_candidates.lock().await.push(candidate);
+                                }
+                            } else if let Some(ws_streams) = ws_streams1.upgrade() {
+                                for ws_stream in ws_streams.lock().await.values() {
                                     if let Err(e) =
                                         signal_candidate(candidate.clone(), ws_stream.clone()).await
                                     {
@@ -147,15 +265,77 @@ impl Conn {
                         }
                     }
                 })
-            },
-        ))
+            }))
+    }
+
+    pub async fn set_on_peer_connection_state_change(&mut self) {
+        let peer_connection = Arc::downgrade(&self.peer_connection);
+        let ws_streams = Arc::downgrade(&self.ws_streams);
+        self.peer_connection
+            .on_peer_connection_state_change(Box::new(move |s| {
+                info!("Peer connection state changed: {:?}", s);
+
+                let peer_connection = peer_connection.clone();
+                let ws_streams = ws_streams.clone();
+
+                if s == RTCPeerConnectionState::Connected {
+                    Box::pin(async move {
+                        let video_rtcp_feedback = vec![
+                            RTCPFeedback {
+                                typ: "goog-remb".to_owned(),
+                                parameter: "".to_owned(),
+                            },
+                            RTCPFeedback {
+                                typ: "ccm".to_owned(),
+                                parameter: "fir".to_owned(),
+                            },
+                            RTCPFeedback {
+                                typ: "nack".to_owned(),
+                                parameter: "".to_owned(),
+                            },
+                            RTCPFeedback {
+                                typ: "nack".to_owned(),
+                                parameter: "pli".to_owned(),
+                            },
+                        ];
+                        let video_track = Some(Arc::new(TrackLocalStaticSample::new(
+                            RTCRtpCodecCapability {
+                                mime_type: MIME_TYPE_VP8.to_owned(),
+                                clock_rate: 90000,
+                                channels: 0,
+                                sdp_fmtp_line: "".to_owned(),
+                                rtcp_feedback: video_rtcp_feedback,
+                            },
+                            "video".to_owned(),
+                            "stream".to_owned(),
+                        )));
+
+                        if let Some(peer_connection) = peer_connection.upgrade() {
+                            peer_connection
+                                .add_track(video_track.as_ref().unwrap().clone())
+                                .await
+                                .expect("Failed to add track");
+
+                            *VIDEO_TRACK.lock().await = video_track;
+
+                            if let Some(ws_streams) = ws_streams.upgrade() {
+                                Self::send_offer(peer_connection, ws_streams)
+                                    .await
+                                    .expect("Failed to send offer")
+                            };
+                        };
+                    })
+                } else {
+                    Box::pin(async {})
+                }
+            }));
     }
 }
 
 #[instrument]
 async fn handle_connection(
     ws_stream: Arc<Mutex<WebSocketStream<TcpStream>>>,
-    peer_connection: Arc<Mutex<RTCPeerConnection>>,
+    peer_connection: Arc<RTCPeerConnection>,
     pending_candidates: Arc<Mutex<Vec<RTCIceCandidate>>>,
     stream_id: i32,
     streams: Arc<Mutex<StreamsMap>>,
@@ -170,22 +350,18 @@ async fn handle_connection(
                 let ws_message: WSMessage = serde_json::from_str(&text)?;
                 match ws_message.event.as_str() {
                     "offer" => {
-                        info!("Received offer event");
-
                         let sdp_str = ws_message.payload;
                         let sdp = match serde_json::from_str::<RTCSessionDescription>(&sdp_str) {
                             Ok(sdp) => sdp,
                             Err(_) => RTCSessionDescription::offer(sdp_str)?,
                         };
-                        info!("Parsed offer successfully");
 
                         // Set remote description, create answer, set local description
                         {
-                            let peer_connection = peer_connection.lock().await;
                             peer_connection.set_remote_description(sdp).await?;
-                            info!("Set remote description successfully");
 
                             let answer = peer_connection.create_answer(None).await?;
+
                             let ws_message = WSMessage {
                                 event: "answer".to_owned(),
                                 payload: answer.unmarshal()?.marshal(),
@@ -194,10 +370,8 @@ async fn handle_connection(
                             ws_stream1
                                 .send(tungstenite::Message::Text(ws_message))
                                 .await?;
-                            info!("Sent answer successfully");
 
                             peer_connection.set_local_description(answer).await?;
-                            info!("Set local description successfully");
                         }
 
                         // Send pending candidates
@@ -208,24 +382,24 @@ async fn handle_connection(
                                 signal_candidate(candidate.clone(), ws_stream2).await?;
                             }
                             pending_candidates.clear();
-
-                            info!("Signaled pending candidates successfully");
                         }
                     }
+                    "answer" => {
+                        let sdp_str = ws_message.payload;
+                        let sdp = match serde_json::from_str::<RTCSessionDescription>(&sdp_str) {
+                            Ok(sdp) => sdp,
+                            Err(_) => RTCSessionDescription::answer(sdp_str)?,
+                        };
+                        peer_connection.set_remote_description(sdp).await?;
+                    }
                     "candidate" => {
-                        info!("Received candidate event");
-
                         let candidate_init = RTCIceCandidateInit {
                             candidate: ws_message.payload,
                             ..Default::default()
                         };
-                        let peer_connection = peer_connection.lock().await;
                         peer_connection.add_ice_candidate(candidate_init).await?;
-                        info!("Added ICE candidate successfully");
                     }
                     "ping" => {
-                        info!("Received ping event");
-
                         ws_stream1
                             .send(tungstenite::Message::Text(serde_json::to_string(
                                 &WSMessage {
