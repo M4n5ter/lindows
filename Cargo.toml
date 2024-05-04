@@ -13,6 +13,10 @@ crate-type = ["rlib"]
 name = "lindows"
 path = "lindows-rs/src/bin/lindows.rs"
 
+[[bin]]
+name = "client"
+path = "lindows-rs/src/bin/client.rs"
+
 [workspace]
 members = ["lindows-rs/lindows-utils"]
 

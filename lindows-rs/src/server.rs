@@ -1,13 +1,18 @@
 use anyhow::Context;
 use bytes::Bytes;
 use std::{
-    sync::mpsc,
+    sync::{mpsc, Arc},
     time::{self, Duration, SystemTime},
 };
-use tokio::net::TcpListener;
+use tokio::{net::TcpListener, sync::Mutex};
+use tokio_tungstenite::accept_async;
+use tracing::{error, info, instrument};
 use webrtc::media::Sample;
 
-use crate::conn::{self, Conn};
+use crate::{
+    conn::{self, handle_connection, Conn},
+    rtc,
+};
 use crabgrab::{
     capturable_content::{CapturableContent, CapturableContentFilter, CapturableWindowFilter},
     capture_stream::{CaptureConfig, CaptureStream, StreamEvent},
@@ -19,61 +24,36 @@ use lindows_utils::common::{
     vpxcodec, PixelBuffer,
 };
 
-pub struct Server {
-    conn: Conn,
+#[derive(Debug)]
+pub struct Server<'a> {
+    addr: &'a str,
+    connections: Vec<Conn>,
 }
 
-impl Server {
-    pub async fn new() -> Self {
-        let tcp_listener = TcpListener::bind("0.0.0.0:11111")
-            .await
-            .expect("Failed to bind to port 11111");
-        let conn = Conn::new(tcp_listener).await;
-        Self { conn }
+impl<'a> Server<'a> {
+    pub fn new(addr: &'a str) -> Self {
+        Self {
+            addr,
+            connections: vec![],
+        }
     }
 
     #[inline]
     pub async fn serve(&mut self) -> anyhow::Result<()> {
         let start = time::Instant::now();
-        // self.conn.set_video_track().await?;
-        self.conn.set_on_data_channel().await;
-        self.conn.set_on_ice_candidate().await;
-        self.conn.set_on_peer_connection_state_change().await;
 
         let (sender, receiver) = mpsc::channel::<Sample>();
-
-        let conn_video_track = conn::VIDEO_TRACK.clone();
-
         tokio::spawn(async move {
             while let Ok(sample) = receiver.recv() {
-                let mut video_track = conn_video_track.lock().await;
-                if let Some(vt) = video_track.take() {
-                    let _ = vt.write_sample(&sample).await;
-                }
+                conn::VIDEO_TRACK
+                    .clone()
+                    .lock()
+                    .await
+                    .write_sample(&sample)
+                    .await
+                    .expect("Failed to write sample");
             }
         });
-
-        // tokio::spawn(async move {
-        // let mut child = Command::new("ffplay")
-        //     .arg("-vcodec")
-        //     .arg("vp8")
-        //     .arg("-video_size")
-        //     .arg("1280x720")
-        //     .arg("-framerate")
-        //     .arg("30")
-        //     .arg("-")
-        //     .stdin(std::process::Stdio::piped())
-        //     .spawn()
-        //     .expect("Failed to spawn ffplay");
-
-        // let stdin = child.stdin.as_mut().expect("Failed to open stdin");
-        // while let Ok(sample) = receiver.recv() {
-        // info!("sending video sample: {}", sample.len());
-        // stdin.write_all(&sample).expect("Failed to write to stdin");
-        // stdin.flush().expect("Failed to flush stdin");
-        // }
-        // child.wait().expect("Failed to wait for ffplay");
-        // });
 
         tokio::spawn(async move {
             // let runtime = tokio::runtime::Builder::new_multi_thread().build().unwrap();
@@ -202,7 +182,7 @@ impl Server {
                         .unwrap();
                     println!("stream created!");
                     tokio::task::block_in_place(|| {
-                        std::thread::sleep(Duration::from_millis(60000))
+                        std::thread::sleep(Duration::from_millis(600000))
                     });
                     stream.stop().unwrap();
                 }
@@ -212,7 +192,43 @@ impl Server {
             }
         });
 
-        self.conn.serve().await;
+        let tcp_listener = TcpListener::bind(&self.addr)
+            .await
+            .expect("Failed to bind to port 11111");
+        self.listen_and_serve(tcp_listener).await;
         Ok(())
+    }
+
+    #[instrument]
+    async fn listen_and_serve(&mut self, listener: TcpListener) {
+        while let Ok((stream, _)) = listener.accept().await {
+            info!("Accepted new connection");
+
+            if let Ok(ws_stream) = accept_async(stream).await {
+                let pc = rtc::new_peer_connection().await;
+                let ws_stream = Arc::new(Mutex::new(ws_stream));
+                let mut conn = Conn::new(pc.clone(), ws_stream.clone());
+                conn.add_transceiver()
+                    .await
+                    .expect("Failed to add transceiver");
+                // conn.set_on_data_channel().await;
+                conn.set_on_ice_candidate().await;
+                conn.set_on_peer_connection_state_change().await;
+                conn.set_on_ice_connection_state_change().await;
+                conn.set_on_ice_gathering_state_change().await;
+                conn.set_on_negotiation_needed().await;
+                conn.set_on_signaling_state_change().await;
+
+                self.connections.push(conn);
+
+                tokio::spawn(async move {
+                    if let Err(err) = handle_connection(ws_stream, pc).await {
+                        error!("Failed to handle connection: {:?}", err);
+                    }
+                });
+            };
+        }
+
+        error!("TCP listener closed");
     }
 }

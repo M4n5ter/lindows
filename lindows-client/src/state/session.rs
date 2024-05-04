@@ -94,7 +94,8 @@ impl Session {
             .await
             .expect("Set local description");
 
-        let sdp = RtcSessionDescription::new_with_description_init_dict(&session_description_init).expect("Offer");
+        let sdp = RtcSessionDescription::new_with_description_init_dict(&session_description_init)
+            .expect("Offer");
         let offer_msg = WSMessage {
             event: "offer".to_string(),
             payload: sdp.sdp(),
@@ -223,13 +224,12 @@ impl Session {
         //             .expect("Serialize ping message"),
         //         )
         //         .expect("Send ping");
-                
+
         //         wasm_timer::Delay::new(std::time::Duration::from_secs(5))
         //         .await
         //         .expect("Delay");
         //     }
         // });
-
     }
 }
 
@@ -379,12 +379,12 @@ fn handle_ws_message(
                 let answer = JsFuture::from(peer.create_answer())
                     .await
                     .expect("Create answer");
-                let answer = answer
-                    .dyn_into::<web_sys::RtcSessionDescription>()
-                    .expect("Answer");
-                let sdp_type = answer.type_();
-                let sdp = answer.sdp();
-                let mut session_description_init = RtcSessionDescriptionInit::new(sdp_type);
+                let sdp = Reflect::get(&answer, &"sdp".into())
+                    .expect("Get sdp")
+                    .as_string()
+                    .expect("Sdp as string");
+                let mut session_description_init =
+                    RtcSessionDescriptionInit::new(RtcSdpType::Answer);
                 session_description_init.sdp(&sdp);
                 JsFuture::from(peer.set_local_description(&session_description_init))
                     .await

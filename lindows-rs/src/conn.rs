@@ -1,158 +1,76 @@
-use std::{collections::HashMap, sync::Arc};
+use std::sync::Arc;
 
 use futures_util::{SinkExt, StreamExt};
 use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
-use tokio::{
-    net::{TcpListener, TcpStream},
-    sync::Mutex,
-};
-use tokio_tungstenite::{accept_async, tungstenite, WebSocketStream};
+use tokio::{net::TcpStream, sync::Mutex};
+use tokio_tungstenite::{tungstenite, WebSocketStream};
 use tracing::{debug, error, info, instrument, trace};
 use webrtc::{
-    api::{
-        interceptor_registry::register_default_interceptors,
-        media_engine::{MediaEngine, MIME_TYPE_VP8},
-        APIBuilder,
-    },
+    api::media_engine::MIME_TYPE_VP8,
     data_channel::data_channel_message::DataChannelMessage,
-    ice_transport::{
-        ice_candidate::{RTCIceCandidate, RTCIceCandidateInit},
-        ice_server::RTCIceServer,
-    },
-    interceptor::registry::Registry,
+    ice_transport::ice_candidate::{RTCIceCandidate, RTCIceCandidateInit},
     peer_connection::{
-        configuration::RTCConfiguration, peer_connection_state::RTCPeerConnectionState,
+        peer_connection_state::RTCPeerConnectionState,
         sdp::session_description::RTCSessionDescription, RTCPeerConnection,
     },
-    rtp_transceiver::{rtp_codec::RTCRtpCodecCapability, RTCPFeedback},
-    track::track_local::{track_local_static_sample::TrackLocalStaticSample, TrackLocal},
+    rtp_transceiver::{
+        rtp_codec::{RTCRtpCodecCapability, RTPCodecType},
+        RTCPFeedback,
+    },
+    track::track_local::track_local_static_sample::TrackLocalStaticSample,
 };
 
+use crate::rtc;
+
 lazy_static! {
-    pub static ref VIDEO_TRACK: Arc<Mutex<Option<Arc<TrackLocalStaticSample>>>> =
-        Arc::new(Mutex::new(None));
-}
-
-#[derive(Debug)]
-pub struct Conn {
-    pub peer_connection: Arc<RTCPeerConnection>,
-    pub pending_candidates: Arc<Mutex<Vec<RTCIceCandidate>>>,
-    pub tcp_listener: TcpListener,
-    ws_streams: Arc<Mutex<StreamsMap>>,
-}
-
-type StreamsMap = HashMap<i32, Arc<Mutex<WebSocketStream<TcpStream>>>>;
-
-impl Conn {
-    pub async fn new(tcp_listener: TcpListener) -> Self {
-        let config = RTCConfiguration {
-            ice_servers: vec![RTCIceServer {
-                urls: vec!["stun:stun.syncthing.net:3478".to_owned()],
-                ..Default::default()
-            }],
-            ..Default::default()
-        };
-
-        let mut m = MediaEngine::default();
-        m.register_default_codecs()
-            .expect("Failed to register default codecs");
-
-        let mut registry = Registry::new();
-
-        registry = register_default_interceptors(registry, &mut m)
-            .expect("Failed to register default interceptors");
-
-        let api = APIBuilder::new()
-            .with_media_engine(m)
-            .with_interceptor_registry(registry)
-            .build();
-
-        let peer_connection = Arc::new(
-            api.new_peer_connection(config)
-                .await
-                .expect("Failed to create peer connection"),
-        );
-
-        let video_rtcp_feedback = vec![
-            RTCPFeedback {
-                typ: "goog-remb".to_owned(),
-                parameter: "".to_owned(),
-            },
-            RTCPFeedback {
-                typ: "ccm".to_owned(),
-                parameter: "fir".to_owned(),
-            },
-            RTCPFeedback {
-                typ: "nack".to_owned(),
-                parameter: "".to_owned(),
-            },
-            RTCPFeedback {
-                typ: "nack".to_owned(),
-                parameter: "pli".to_owned(),
-            },
-        ];
-        let video_track = Arc::new(TrackLocalStaticSample::new(
+    pub static ref VIDEO_TRACK: Arc<Mutex<Arc<TrackLocalStaticSample>>> =
+        Arc::new(Mutex::new(Arc::new(TrackLocalStaticSample::new(
             RTCRtpCodecCapability {
                 mime_type: MIME_TYPE_VP8.to_owned(),
                 clock_rate: 90000,
                 channels: 0,
                 sdp_fmtp_line: "".to_owned(),
-                rtcp_feedback: video_rtcp_feedback,
+                rtcp_feedback: vec![
+                    RTCPFeedback {
+                        typ: "goog-remb".to_owned(),
+                        parameter: "".to_owned(),
+                    },
+                    RTCPFeedback {
+                        typ: "ccm".to_owned(),
+                        parameter: "fir".to_owned(),
+                    },
+                    RTCPFeedback {
+                        typ: "nack".to_owned(),
+                        parameter: "".to_owned(),
+                    },
+                    RTCPFeedback {
+                        typ: "nack".to_owned(),
+                        parameter: "pli".to_owned(),
+                    },
+                ],
             },
             "video".to_owned(),
             "stream".to_owned(),
-        ));
+        ))));
+    static ref PENDING_CANDIDATES: Arc<Mutex<Vec<RTCIceCandidate>>> = Arc::new(Mutex::new(vec![]));
+}
 
-        let rtp_sender = peer_connection
-            .add_track(Arc::clone(&video_track) as Arc<dyn TrackLocal + Send + Sync>)
-            .await
-            .expect("Failed to add track");
-        tokio::spawn(async move {
-            let mut rtcp_buf = vec![0u8; 1500];
-            while let Ok((_, _)) = rtp_sender.read(&mut rtcp_buf).await {}
-            anyhow::Result::<()>::Ok(())
-        });
-        *VIDEO_TRACK.lock().await = Some(video_track);
+#[derive(Debug)]
+pub struct Conn {
+    pub peer_connection: Arc<RTCPeerConnection>,
+    ws_stream: Arc<Mutex<WebSocketStream<TcpStream>>>,
+}
 
-        let pending_candidates = Arc::new(Mutex::new(vec![]));
-
-        let ws_streams = Arc::new(Mutex::new(HashMap::<
-            i32,
-            Arc<Mutex<WebSocketStream<TcpStream>>>,
-        >::new()));
-
+impl Conn {
+    pub fn new(
+        peer_connection: Arc<RTCPeerConnection>,
+        ws_stream: Arc<Mutex<WebSocketStream<TcpStream>>>,
+    ) -> Self {
         Self {
             peer_connection,
-            pending_candidates,
-            tcp_listener,
-            ws_streams,
+            ws_stream,
         }
-    }
-
-    pub async fn send_offer(
-        pc: Arc<RTCPeerConnection>,
-        ws_streams: Arc<Mutex<StreamsMap>>,
-    ) -> anyhow::Result<()> {
-        let offer = pc.create_offer(None).await?;
-        pc.set_local_description(offer.clone()).await?;
-
-        let ws_streams = ws_streams.lock().await;
-        for ws_stream in ws_streams.values() {
-            let ws_stream = ws_stream.clone();
-            let ws_message = WSMessage {
-                event: "offer".to_owned(),
-                payload: offer.unmarshal()?.marshal(),
-            };
-            let ws_message = serde_json::to_string(&ws_message)?;
-            ws_stream
-                .lock()
-                .await
-                .send(tungstenite::Message::Text(ws_message))
-                .await?;
-        }
-
-        Ok(())
     }
 
     pub async fn close(&self) -> anyhow::Result<()> {
@@ -160,38 +78,20 @@ impl Conn {
         Ok(())
     }
 
-    #[instrument]
-    pub async fn serve(&self) {
-        let mut stream_id = 0;
+    pub async fn add_video_track(&self) -> anyhow::Result<()> {
+        rtc::add_track_on_peer_connection(
+            self.peer_connection.clone(),
+            VIDEO_TRACK.clone().lock().await.clone(),
+        )
+        .await?;
+        Ok(())
+    }
 
-        while let Ok((stream, _)) = self.tcp_listener.accept().await {
-            info!("Accepted new connection");
-
-            stream_id += 1;
-            let peer_connection = self.peer_connection.clone();
-            let pending_candidates = self.pending_candidates.clone();
-            if let Ok(ws_stream) = accept_async(stream).await {
-                let ws_stream = Arc::new(Mutex::new(ws_stream));
-                let ws_stream_cloned = ws_stream.clone();
-                let streams = self.ws_streams.clone();
-                tokio::spawn(async move {
-                    if let Err(err) = handle_connection(
-                        ws_stream_cloned,
-                        peer_connection,
-                        pending_candidates,
-                        stream_id,
-                        streams,
-                    )
-                    .await
-                    {
-                        error!("Failed to handle connection: {:?}", err);
-                    }
-                });
-                self.ws_streams.lock().await.insert(stream_id, ws_stream);
-            };
-        }
-
-        error!("TCP listener closed");
+    pub async fn add_transceiver(&self) -> anyhow::Result<()> {
+        self.peer_connection
+            .add_transceiver_from_kind(RTPCodecType::Video, None)
+            .await?;
+        Ok(())
     }
 
     #[instrument]
@@ -234,32 +134,25 @@ impl Conn {
     #[instrument]
     pub async fn set_on_ice_candidate(&self) {
         let pc = Arc::downgrade(&self.peer_connection);
-        let pending_candidates = Arc::downgrade(&self.pending_candidates);
-        let ws_streams = Arc::downgrade(&self.ws_streams);
+        let ws_stream = Arc::downgrade(&self.ws_stream);
 
         self.peer_connection
             .on_ice_candidate(Box::new(move |c: Option<RTCIceCandidate>| {
                 info!("ICE candidate: {:?}", c);
 
                 let pc1 = pc.clone();
-                let pending_candidates1 = pending_candidates.clone();
-                let ws_streams1 = ws_streams.clone();
+                let pending_candidates = PENDING_CANDIDATES.clone();
+                let ws_stream1 = ws_stream.clone();
 
                 Box::pin(async move {
                     if let Some(candidate) = c {
                         if let Some(pc) = pc1.upgrade() {
                             let desc = pc.remote_description().await;
                             if desc.is_none() {
-                                if let Some(pending_candidates) = pending_candidates1.upgrade() {
-                                    pending_candidates.lock().await.push(candidate);
-                                }
-                            } else if let Some(ws_streams) = ws_streams1.upgrade() {
-                                for ws_stream in ws_streams.lock().await.values() {
-                                    if let Err(e) =
-                                        signal_candidate(candidate.clone(), ws_stream.clone()).await
-                                    {
-                                        error!("Failed to signal candidate: {:?}", e);
-                                    }
+                                pending_candidates.lock().await.push(candidate);
+                            } else if let Some(ws_stream) = ws_stream1.upgrade() {
+                                if let Err(e) = signal_candidate(candidate, ws_stream).await {
+                                    error!("Failed to signal candidate: {:?}", e);
                                 }
                             }
                         }
@@ -268,77 +161,60 @@ impl Conn {
             }))
     }
 
+    pub async fn set_on_ice_connection_state_change(&mut self) {
+        self.peer_connection
+            .on_ice_connection_state_change(Box::new(move |s| {
+                info!("ICE connection state changed: {:?}", s);
+
+                Box::pin(async {})
+            }));
+    }
+
     pub async fn set_on_peer_connection_state_change(&mut self) {
-        let peer_connection = Arc::downgrade(&self.peer_connection);
-        let ws_streams = Arc::downgrade(&self.ws_streams);
         self.peer_connection
             .on_peer_connection_state_change(Box::new(move |s| {
                 info!("Peer connection state changed: {:?}", s);
 
-                let peer_connection = peer_connection.clone();
-                let ws_streams = ws_streams.clone();
-
                 if s == RTCPeerConnectionState::Connected {
-                    Box::pin(async move {
-                        let video_rtcp_feedback = vec![
-                            RTCPFeedback {
-                                typ: "goog-remb".to_owned(),
-                                parameter: "".to_owned(),
-                            },
-                            RTCPFeedback {
-                                typ: "ccm".to_owned(),
-                                parameter: "fir".to_owned(),
-                            },
-                            RTCPFeedback {
-                                typ: "nack".to_owned(),
-                                parameter: "".to_owned(),
-                            },
-                            RTCPFeedback {
-                                typ: "nack".to_owned(),
-                                parameter: "pli".to_owned(),
-                            },
-                        ];
-                        let video_track = Some(Arc::new(TrackLocalStaticSample::new(
-                            RTCRtpCodecCapability {
-                                mime_type: MIME_TYPE_VP8.to_owned(),
-                                clock_rate: 90000,
-                                channels: 0,
-                                sdp_fmtp_line: "".to_owned(),
-                                rtcp_feedback: video_rtcp_feedback,
-                            },
-                            "video".to_owned(),
-                            "stream".to_owned(),
-                        )));
-
-                        if let Some(peer_connection) = peer_connection.upgrade() {
-                            peer_connection
-                                .add_track(video_track.as_ref().unwrap().clone())
-                                .await
-                                .expect("Failed to add track");
-
-                            *VIDEO_TRACK.lock().await = video_track;
-
-                            if let Some(ws_streams) = ws_streams.upgrade() {
-                                Self::send_offer(peer_connection, ws_streams)
-                                    .await
-                                    .expect("Failed to send offer")
-                            };
-                        };
-                    })
+                    Box::pin(async move {})
                 } else {
                     Box::pin(async {})
                 }
             }));
     }
+
+    pub async fn set_on_ice_gathering_state_change(&mut self) {
+        self.peer_connection
+            .on_ice_gathering_state_change(Box::new(move |s| {
+                info!("ICE gathering state changed: {:?}", s);
+
+                Box::pin(async {})
+            }));
+    }
+
+    pub async fn set_on_negotiation_needed(&mut self) {
+        self.peer_connection
+            .on_negotiation_needed(Box::new(move || {
+                info!("Negotiation needed");
+
+                Box::pin(async {})
+            }));
+    }
+
+    pub async fn set_on_signaling_state_change(&mut self) {
+        self.peer_connection
+            .on_signaling_state_change(Box::new(move |s| {
+                info!("Signaling state changed: {:?}", s);
+
+                Box::pin(async {})
+            }));
+    }
 }
 
 #[instrument]
-async fn handle_connection(
+pub async fn handle_connection(
     ws_stream: Arc<Mutex<WebSocketStream<TcpStream>>>,
     peer_connection: Arc<RTCPeerConnection>,
-    pending_candidates: Arc<Mutex<Vec<RTCIceCandidate>>>,
-    stream_id: i32,
-    streams: Arc<Mutex<StreamsMap>>,
 ) -> anyhow::Result<()> {
     let mut ws_stream1 = ws_stream.lock().await;
     while let Some(msg) = ws_stream1.next().await {
@@ -351,6 +227,7 @@ async fn handle_connection(
                 match ws_message.event.as_str() {
                     "offer" => {
                         let sdp_str = ws_message.payload;
+                        info!("Received offer: {:?}", sdp_str);
                         let sdp = match serde_json::from_str::<RTCSessionDescription>(&sdp_str) {
                             Ok(sdp) => sdp,
                             Err(_) => RTCSessionDescription::offer(sdp_str)?,
@@ -359,6 +236,12 @@ async fn handle_connection(
                         // Set remote description, create answer, set local description
                         {
                             peer_connection.set_remote_description(sdp).await?;
+
+                            rtc::add_track_on_peer_connection(
+                                peer_connection.clone(),
+                                VIDEO_TRACK.clone().lock().await.clone(),
+                            )
+                            .await?;
 
                             let answer = peer_connection.create_answer(None).await?;
 
@@ -376,13 +259,16 @@ async fn handle_connection(
 
                         // Send pending candidates
                         {
-                            let mut pending_candidates = pending_candidates.lock().await;
+                            let mut pending_candidates = PENDING_CANDIDATES.lock().await;
                             for candidate in pending_candidates.iter() {
                                 let ws_stream2 = ws_stream.clone();
                                 signal_candidate(candidate.clone(), ws_stream2).await?;
                             }
                             pending_candidates.clear();
                         }
+
+                        // tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+                        // rtc::send_offer(peer_connection.clone(), ws_stream.clone()).await?;
                     }
                     "answer" => {
                         let sdp_str = ws_message.payload;
@@ -415,8 +301,6 @@ async fn handle_connection(
                 }
             }
             tungstenite::Message::Close(_) => {
-                ws_stream1.close(None).await?;
-                streams.lock().await.remove(&stream_id);
                 info!("Connection closed by client");
                 break;
             }
@@ -453,7 +337,7 @@ async fn signal_candidate(
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-struct WSMessage {
+pub struct WSMessage {
     pub event: String,
     pub payload: String,
 }

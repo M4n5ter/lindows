@@ -12,7 +12,7 @@ async fn main() -> anyhow::Result<()> {
 
     tracing::subscriber::set_global_default(subscriber).expect("setting default subscriber failed");
 
-    let mut server = Server::new().await;
+    let mut server = Server::new("0.0.0.0:11111");
     server.serve().await?;
 
     Ok(())
