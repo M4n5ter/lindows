@@ -19,6 +19,7 @@ use crate::state::config::LindowsConfig;
 pub fn provide_session() {
     let session = Session::new();
     session.set_peer_callback();
+    session.set_data_channel();
     session.set_ws_callback();
     provide_context(create_rw_signal(session));
 }
@@ -93,7 +94,8 @@ impl Session {
             .await
             .expect("Set local description");
 
-        let sdp = RtcSessionDescription::new_with_description_init_dict(&session_description_init).expect("Offer");
+        let sdp = RtcSessionDescription::new_with_description_init_dict(&session_description_init)
+            .expect("Offer");
         let offer_msg = WSMessage {
             event: "offer".to_string(),
             payload: sdp.sdp(),
@@ -121,7 +123,7 @@ impl Session {
         set_peer_oniceconnectionstatechange(self.peer.clone());
     }
 
-    pub fn set_data_channel(&mut self) {
+    pub fn set_data_channel(&self) {
         let common_data_channel = self.common_data_channel.clone();
         {
             let data_channel_cloned = common_data_channel.clone();
@@ -173,7 +175,11 @@ impl Session {
                             handle_serde_json_error(e);
                         }
                     }
+                } else {
+                    console_log("Received empty text message");
                 }
+            } else {
+                console_log("Received non-text message");
             }
         }) as Box<dyn FnMut(MessageEvent)>);
 
@@ -222,13 +228,12 @@ impl Session {
         //             .expect("Serialize ping message"),
         //         )
         //         .expect("Send ping");
-                
+
         //         wasm_timer::Delay::new(std::time::Duration::from_secs(5))
         //         .await
         //         .expect("Delay");
         //     }
         // });
-
     }
 }
 
@@ -349,6 +354,7 @@ fn handle_ws_message(
     match message.event.as_str() {
         "answer" => {
             let sdp = message.payload;
+            console_log(&format!("Received answer: {}", sdp));
             let peer = peer.clone();
             spawn_local(async move {
                 let mut session_description_init =
@@ -364,6 +370,7 @@ fn handle_ws_message(
         }
         "offer" => {
             let sdp = message.payload;
+            console_log(&format!("Received offer: {}", sdp));
             let peer = peer.clone();
             spawn_local(async move {
                 let mut session_description_init =
@@ -376,12 +383,12 @@ fn handle_ws_message(
                 let answer = JsFuture::from(peer.create_answer())
                     .await
                     .expect("Create answer");
-                let answer = answer
-                    .dyn_into::<web_sys::RtcSessionDescription>()
-                    .expect("Answer");
-                let sdp_type = answer.type_();
-                let sdp = answer.sdp();
-                let mut session_description_init = RtcSessionDescriptionInit::new(sdp_type);
+                let sdp = Reflect::get(&answer, &"sdp".into())
+                    .expect("Get sdp")
+                    .as_string()
+                    .expect("Sdp as string");
+                let mut session_description_init =
+                    RtcSessionDescriptionInit::new(RtcSdpType::Answer);
                 session_description_init.sdp(&sdp);
                 JsFuture::from(peer.set_local_description(&session_description_init))
                     .await

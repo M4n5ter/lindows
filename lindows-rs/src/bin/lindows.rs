@@ -1,10 +1,9 @@
-use liblindows::conn::Conn;
-use tokio::net::TcpListener;
+use liblindows::server::Server;
 use tracing::Level;
 use tracing_subscriber::FmtSubscriber;
 
 #[tokio::main]
-async fn main() {
+async fn main() -> anyhow::Result<()> {
     liblindows::cnsoft();
 
     let subscriber = FmtSubscriber::builder()
@@ -13,11 +12,8 @@ async fn main() {
 
     tracing::subscriber::set_global_default(subscriber).expect("setting default subscriber failed");
 
-    let tcp_listener = TcpListener::bind("0.0.0.0:11111")
-        .await
-        .expect("Failed to bind to port 11111");
+    let mut server = Server::new("0.0.0.0:11111");
+    server.serve().await?;
 
-    let conn = Conn::new(tcp_listener).await;
-    conn.set_on_ice_candidate().await;
-    conn.serve().await;
+    Ok(())
 }
