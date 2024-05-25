@@ -1,8 +1,7 @@
 use std::sync::Arc;
 
-use futures_util::SinkExt;
-use tokio::{net::TcpStream, sync::Mutex};
-use tokio_tungstenite::{tungstenite, WebSocketStream};
+use tokio::sync::mpsc::UnboundedSender;
+use tokio_tungstenite::tungstenite;
 use webrtc::{
     api::{
         interceptor_registry::register_default_interceptors,
@@ -99,7 +98,7 @@ pub async fn new_video_track() -> Arc<TrackLocalStaticSample> {
 #[inline]
 pub async fn send_offer(
     pc: Arc<RTCPeerConnection>,
-    ws_stream: Arc<Mutex<WebSocketStream<TcpStream>>>,
+    ws_sender: UnboundedSender<tungstenite::Message>,
 ) -> anyhow::Result<()> {
     let offer = pc.create_offer(None).await?;
     let offer_sdp = offer.sdp.clone();
@@ -110,11 +109,6 @@ pub async fn send_offer(
     let ws_message = serde_json::to_string(&ws_message)?;
     pc.set_local_description(offer).await?;
 
-    ws_stream
-        .clone()
-        .lock()
-        .await
-        .send(tungstenite::Message::Text(ws_message))
-        .await?;
+    ws_sender.send(tungstenite::Message::Text(ws_message))?;
     Ok(())
 }

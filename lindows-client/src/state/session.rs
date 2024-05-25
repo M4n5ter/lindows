@@ -175,7 +175,11 @@ impl Session {
                             handle_serde_json_error(e);
                         }
                     }
+                } else {
+                    console_log("Received empty text message");
                 }
+            } else {
+                console_log("Received non-text message");
             }
         }) as Box<dyn FnMut(MessageEvent)>);
 
