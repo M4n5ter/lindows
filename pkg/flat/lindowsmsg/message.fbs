@@ -1,0 +1,15 @@
+namespace LindowsMsg;
+
+table Payload {
+    p1:int;
+    p2:int;
+    p3:int;
+    p4:string;
+}
+
+table Message {
+    event:ubyte;
+    payload:Payload;
+}
+
+root_type Message;

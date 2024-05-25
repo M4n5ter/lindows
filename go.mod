@@ -3,6 +3,7 @@ module github.com/m4n5ter/lindows
 go 1.22
 
 require (
+	github.com/google/flatbuffers v24.3.25+incompatible
 	github.com/pion/rtp v1.8.5
 	github.com/pion/webrtc/v4 v4.0.0-beta.17
 	github.com/spf13/cobra v1.8.0
